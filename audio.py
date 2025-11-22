@@ -13,6 +13,16 @@ class AudioPlayer:
         if os.path.exists(self.music_dir):
             self.playlist = [os.path.join(self.music_dir, f) for f in os.listdir(self.music_dir) if f.endswith('.mid')]
         
+        # Load sound effects
+        self.clear_sound = None
+        sound_path = os.path.join(self.music_dir, "clear.wav")
+        if os.path.exists(sound_path):
+            self.clear_sound = pygame.mixer.Sound(sound_path)
+
+    def play_clear(self):
+        if self.clear_sound:
+            self.clear_sound.play()
+        
     def play_next(self):
         if not self.playlist:
             return

@@ -29,24 +29,59 @@ class UI:
         inner_rect = pygame.Rect(x + 4, y + 4, size - 8, size - 8)
         pygame.draw.rect(self.screen, (color[0], color[1], color[2], 100), inner_rect, 1)
 
-    def draw_grid(self, grid, offset_x, offset_y):
+    def draw_grid(self, grid, offset_x, offset_y, row_offsets=None, flash_lines=None):
         # Draw grid background
         pygame.draw.rect(self.screen, self.grid_bg_color, 
                          (offset_x, offset_y, grid.width * grid.cell_size, grid.height * grid.cell_size))
         
+        # Clip to grid area
+        clip_rect = pygame.Rect(offset_x, offset_y, grid.width * grid.cell_size, grid.height * grid.cell_size)
+        self.screen.set_clip(clip_rect)
+        
         # Draw locked blocks
         for y, row in enumerate(grid.grid):
+            # Calculate visual Y position
+            visual_y = offset_y + y * grid.cell_size
+            if row_offsets and y < len(row_offsets):
+                visual_y += row_offsets[y]
+                
             for x, color in enumerate(row):
                 if color != (0, 0, 0):
                     self.draw_block(offset_x + x * grid.cell_size, 
-                                    offset_y + y * grid.cell_size, 
+                                    visual_y, 
                                     grid.cell_size, color)
+                                    
+        # Draw Flash Effect
+        if flash_lines:
+            s = pygame.Surface((grid.width * grid.cell_size, grid.cell_size))
+            s.set_alpha(150)
+            s.fill((255, 255, 255))
+            for line in flash_lines:
+                self.screen.blit(s, (offset_x, offset_y + line * grid.cell_size))
+                
+        self.screen.set_clip(None) # Reset clip
 
     def draw_pentomino(self, pentomino, offset_x, offset_y, cell_size):
+        # Clip to grid area for current piece too
+        # Assuming grid dimensions are known or passed. 
+        # For simplicity, we'll just rely on the fact that draw_block clips if we set clip? 
+        # No, we unset clip above. Let's re-clip or just check bounds.
+        
+        # Better: check bounds manually to avoid drawing outside
+        # But we need the grid dimensions. 
+        # Let's just use the same clip rect logic if possible, or pass it in.
+        # For now, let's just draw. If it's above the board, it might draw over UI?
+        # Yes, we should clip.
+        
+        clip_rect = pygame.Rect(offset_x, offset_y, 12 * cell_size, 24 * cell_size) # Hardcoded grid size for now or pass it
+        self.screen.set_clip(clip_rect)
+        
         for x, y in pentomino.shape:
             self.draw_block(offset_x + (pentomino.x + x) * cell_size, 
                             offset_y + (pentomino.y + y) * cell_size, 
                             cell_size, pentomino.color)
+        
+        self.screen.set_clip(None)
             
     def draw_preview(self, pentomino, x, y, cell_size):
         # Draw label

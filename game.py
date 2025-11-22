@@ -9,8 +9,8 @@ class Game:
     def __init__(self):
         self.screen_width = 800
         self.screen_height = 800
-        self.grid_width = 12 # Pentominoes are larger, maybe need wider board? Standard Tetris is 10. Let's go 12.
-        self.grid_height = 24 # Taller board
+        self.grid_width = 12 
+        self.grid_height = 24 
         self.cell_size = 30
         
         self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
@@ -22,7 +22,7 @@ class Game:
         self.ui = UI(self.screen)
         self.audio = AudioPlayer("assets/music")
         
-        self.state = "MENU" # MENU, PLAYING, GAMEOVER
+        self.state = "MENU" # MENU, PLAYING, GAMEOVER, ANIMATING_CLEAR, ANIMATING_DROP
         self.score = 0
         self.level = 1
         self.lines_cleared_total = 0
@@ -31,8 +31,12 @@ class Game:
         self.next_piece = None
         
         self.fall_time = 0
-        self.fall_speed = 1000 # ms
-        self.fast_drop = False
+        self.fall_speed = 1000 
+        
+        # Animation state
+        self.clearing_lines = []
+        self.animation_timer = 0
+        self.row_offsets = [0] * self.grid_height
 
     def reset(self):
         self.grid = Grid(self.grid_width, self.grid_height, self.cell_size)
@@ -46,12 +50,11 @@ class Game:
 
     def update_score(self, lines):
         if lines > 0:
-            # Pentomino scoring: more lines = much more points
-            points = [0, 100, 300, 500, 800, 1200] # Up to 5 lines possible with pentominoes
+            points = [0, 100, 300, 500, 800, 1200]
             self.score += points[min(lines, 5)] * self.level
             self.lines_cleared_total += lines
             
-            if self.lines_cleared_total >= self.level * 5: # Level up every 5 lines
+            if self.lines_cleared_total >= self.level * 5:
                 self.level += 1
                 self.fall_speed = max(100, self.fall_speed - 50)
 
@@ -62,11 +65,7 @@ class Game:
             
             action = self.input_manager.get_action(event)
             
-            if self.state == "MENU":
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
-                    self.reset()
-            
-            elif self.state == "GAMEOVER":
+            if self.state == "MENU" or self.state == "GAMEOVER":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
                     self.reset()
             
@@ -80,38 +79,152 @@ class Game:
                 elif action == "DOWN":
                     if not self.grid.check_collision(self.current_piece, offset_y=1):
                         self.current_piece.y += 1
-                        self.score += 1 # Soft drop points
+                        self.score += 1 
+                        self.fall_time = pygame.time.get_ticks() # Reset fall timer on manual drop
                 elif action == "ROTATE_CW" or action == "ROTATE_CW_ALT":
                     self.current_piece.rotate_right()
                     if self.grid.check_collision(self.current_piece):
-                        self.current_piece.rotate_left() # Revert if invalid
+                        self.current_piece.rotate_left() 
                 elif action == "ROTATE_CCW":
                     self.current_piece.rotate_left()
                     if self.grid.check_collision(self.current_piece):
-                        self.current_piece.rotate_right() # Revert if invalid
+                        self.current_piece.rotate_right() 
 
         return True
 
+    def check_and_clear_lines(self):
+        # Identify lines to clear
+        lines_to_clear = []
+        for y, row in enumerate(self.grid.grid):
+            if (0, 0, 0) not in row:
+                lines_to_clear.append(y)
+        
+        if lines_to_clear:
+            self.clearing_lines = lines_to_clear
+            self.state = "ANIMATING_CLEAR"
+            self.animation_timer = pygame.time.get_ticks()
+            self.audio.play_clear()
+            return True
+        return False
+
+    def apply_line_clears(self):
+        # Calculate offsets for drop animation
+        # For each row, calculate how many cleared lines are below it
+        self.row_offsets = [0] * self.grid_height
+        
+        # Actually clear the grid
+        # We need to do this carefully to track where rows come from
+        
+        # Create new grid
+        new_grid = []
+        # Rows that are NOT cleared
+        kept_rows = []
+        for y in range(self.grid_height):
+            if y not in self.clearing_lines:
+                kept_rows.append(self.grid.grid[y])
+        
+        # Number of new empty rows needed
+        num_new = self.grid_height - len(kept_rows)
+        for _ in range(num_new):
+            new_grid.append([(0, 0, 0) for _ in range(self.grid_width)])
+        new_grid.extend(kept_rows)
+        
+        self.grid.grid = new_grid
+        self.update_score(len(self.clearing_lines))
+        
+        # Calculate visual offsets
+        # A row at index 'y' in the NEW grid came from 'src_y' in the OLD grid
+        # src_y = y - num_new (roughly, but we need to account for gaps)
+        
+        # Simpler approach for offsets:
+        # Rows 0 to num_new-1 are new, so they fade in or drop from top? 
+        # Let's say they drop from -num_new * cell_size
+        
+        # Rows starting at num_new correspond to the top-most kept row.
+        # If we cleared lines 20, 21, 22.
+        # Rows 0-19 are kept. They shift down by 3.
+        # So in the new grid, row 3 (was 0) should start at visual position of row 0.
+        # Offset = (Old Y - New Y) * cell_size
+        
+        # Let's map new index to old index
+        old_indices = []
+        current_old = 0
+        # First num_new rows are "new" (index -1 or something)
+        for _ in range(num_new):
+            old_indices.append(-1)
+            
+        for y in range(self.grid_height):
+            if y not in self.clearing_lines:
+                old_indices.append(y)
+                
+        # Now populate row_offsets
+        # self.row_offsets[new_y] = (old_y - new_y) * cell_size
+        for new_y in range(self.grid_height):
+            old_y = old_indices[new_y]
+            if old_y == -1:
+                self.row_offsets[new_y] = -num_new * self.cell_size # Drop from above
+            else:
+                self.row_offsets[new_y] = (old_y - new_y) * self.cell_size
+
     def update(self):
         self.audio.update()
+        current_time = pygame.time.get_ticks()
         
         if self.state == "PLAYING":
-            current_time = pygame.time.get_ticks()
-            if current_time - self.fall_time > self.fall_speed:
+            # Determine fall speed
+            current_fall_speed = self.fall_speed
+            if self.input_manager.is_down_held():
+                current_fall_speed = 80 # Slower fast drop (was 50)
+            
+            if current_time - self.fall_time > current_fall_speed:
                 if not self.grid.check_collision(self.current_piece, offset_y=1):
                     self.current_piece.y += 1
+                    if self.input_manager.is_down_held():
+                        self.score += 1
                 else:
                     self.grid.lock_shape(self.current_piece)
-                    lines = self.grid.clear_lines()
-                    self.update_score(lines)
                     
-                    self.current_piece = self.next_piece
-                    self.next_piece = Pentomino(self.grid_width // 2, 0)
-                    
-                    if self.grid.check_collision(self.current_piece):
-                        self.state = "GAMEOVER"
+                    if self.check_and_clear_lines():
+                        pass # State changed to ANIMATING_CLEAR
+                    else:
+                        self.current_piece = self.next_piece
+                        self.next_piece = Pentomino(self.grid_width // 2, 0)
+                        # Revert spawn adjustment: check collision immediately?
+                        # If we spawn at y=-2, we might not collide yet.
+                        # But if we can't move down, it's game over.
+                        if self.grid.check_collision(self.current_piece):
+                             self.state = "GAMEOVER"
                 
                 self.fall_time = current_time
+                
+        elif self.state == "ANIMATING_CLEAR":
+            if current_time - self.animation_timer > 200: # 200ms flash
+                self.apply_line_clears()
+                self.state = "ANIMATING_DROP"
+                self.animation_timer = current_time
+                
+        elif self.state == "ANIMATING_DROP":
+            # Reduce offsets
+            all_done = True
+            drop_speed = 2 # Pixels per frame
+            for i in range(self.grid_height):
+                if self.row_offsets[i] < 0:
+                    self.row_offsets[i] += drop_speed
+                    if self.row_offsets[i] > 0:
+                        self.row_offsets[i] = 0
+                    all_done = False
+                elif self.row_offsets[i] > 0: # Should not happen with drop
+                    self.row_offsets[i] -= drop_speed
+                    if self.row_offsets[i] < 0:
+                        self.row_offsets[i] = 0
+                    all_done = False
+            
+            if all_done:
+                self.state = "PLAYING"
+                self.current_piece = self.next_piece
+                self.next_piece = Pentomino(self.grid_width // 2, 0)
+                if self.grid.check_collision(self.current_piece):
+                    self.state = "GAMEOVER"
 
     def draw(self):
         self.screen.fill(self.ui.bg_color)
@@ -122,12 +235,19 @@ class Game:
             self.screen.blit(title, (self.screen_width // 2 - title.get_width() // 2, 200))
             self.screen.blit(start, (self.screen_width // 2 - start.get_width() // 2, 400))
             
-        elif self.state == "PLAYING" or self.state == "GAMEOVER":
+        else:
             offset_x = (self.screen_width - self.grid_width * self.cell_size) // 2
             offset_y = 50
             
-            self.ui.draw_grid(self.grid, offset_x, offset_y)
-            self.ui.draw_pentomino(self.current_piece, offset_x, offset_y, self.cell_size)
+            # Pass offsets and flash lines if animating
+            offsets = self.row_offsets if self.state == "ANIMATING_DROP" else None
+            flash = self.clearing_lines if self.state == "ANIMATING_CLEAR" else None
+            
+            self.ui.draw_grid(self.grid, offset_x, offset_y, offsets, flash)
+            
+            if self.state == "PLAYING":
+                self.ui.draw_pentomino(self.current_piece, offset_x, offset_y, self.cell_size)
+            
             self.ui.draw_preview(self.next_piece, offset_x + self.grid_width * self.cell_size + 20, offset_y, self.cell_size)
             self.ui.draw_score(self.score, self.level, self.lines_cleared_total, 50, offset_y)
             
