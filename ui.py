@@ -3,37 +3,35 @@ import pygame
 class UI:
     def __init__(self, screen, font_path=None):
         self.screen = screen
-        self.font = pygame.font.Font(font_path, 24) if font_path else pygame.font.SysFont("Arial", 24)
-        self.large_font = pygame.font.Font(font_path, 48) if font_path else pygame.font.SysFont("Arial", 48)
+        # Use Consolas for digital look
+        self.font = pygame.font.SysFont("Consolas", 20, bold=True)
+        self.large_font = pygame.font.SysFont("Consolas", 40, bold=True)
+        self.score_font = pygame.font.SysFont("Consolas", 28, bold=True)
+        
         self.bg_color = (20, 20, 25) # Dark background
-        self.grid_bg_color = (30, 30, 35)
+        self.grid_bg_color = (10, 10, 15)
         self.text_color = (220, 220, 220)
+        self.border_color = (100, 100, 100) # Grey border
 
     def draw_block(self, x, y, size, color):
         rect = pygame.Rect(x, y, size, size)
         pygame.draw.rect(self.screen, color, rect)
         
         # Bevel Effect
-        # Lighter on Top and Left
         highlight = (min(color[0] + 50, 255), min(color[1] + 50, 255), min(color[2] + 50, 255))
-        # Darker on Bottom and Right
         shadow = (max(color[0] - 50, 0), max(color[1] - 50, 0), max(color[2] - 50, 0))
-        
         border_width = 3
         
-        # Top
         pygame.draw.polygon(self.screen, highlight, [(x, y), (x + size, y), (x + size - border_width, y + border_width), (x + border_width, y + border_width)])
-        # Left
         pygame.draw.polygon(self.screen, highlight, [(x, y), (x + border_width, y + border_width), (x + border_width, y + size - border_width), (x, y + size)])
-        
-        # Bottom
         pygame.draw.polygon(self.screen, shadow, [(x, y + size), (x + size, y + size), (x + size - border_width, y + size - border_width), (x + border_width, y + size - border_width)])
-        # Right
         pygame.draw.polygon(self.screen, shadow, [(x + size, y), (x + size, y + size), (x + size - border_width, y + size - border_width), (x + size - border_width, y + border_width)])
-        
-        # No inner square, just the bevel for a clean look
 
     def draw_grid(self, grid, offset_x, offset_y, row_offsets=None, flash_lines=None):
+        # Draw Border
+        border_rect = pygame.Rect(offset_x - 5, offset_y - 5, grid.width * grid.cell_size + 10, grid.height * grid.cell_size + 10)
+        pygame.draw.rect(self.screen, self.border_color, border_rect, 2)
+        
         # Draw grid background
         pygame.draw.rect(self.screen, self.grid_bg_color, 
                          (offset_x, offset_y, grid.width * grid.cell_size, grid.height * grid.cell_size))
@@ -44,7 +42,6 @@ class UI:
         
         # Draw locked blocks
         for y, row in enumerate(grid.grid):
-            # Calculate visual Y position
             visual_y = offset_y + y * grid.cell_size
             if row_offsets and y < len(row_offsets):
                 visual_y += row_offsets[y]
@@ -63,21 +60,10 @@ class UI:
             for line in flash_lines:
                 self.screen.blit(s, (offset_x, offset_y + line * grid.cell_size))
                 
-        self.screen.set_clip(None) # Reset clip
+        self.screen.set_clip(None)
 
     def draw_pentomino(self, pentomino, offset_x, offset_y, cell_size):
-        # Clip to grid area for current piece too
-        # Assuming grid dimensions are known or passed. 
-        # For simplicity, we'll just rely on the fact that draw_block clips if we set clip? 
-        # No, we unset clip above. Let's re-clip or just check bounds.
-        
-        # Better: check bounds manually to avoid drawing outside
-        # But we need the grid dimensions. 
-        # Let's just use the same clip rect logic if possible, or pass it in.
-        # For now, let's just draw. If it's above the board, it might draw over UI?
-        # Yes, we should clip.
-        
-        clip_rect = pygame.Rect(offset_x, offset_y, 12 * cell_size, 24 * cell_size) # Hardcoded grid size for now or pass it
+        clip_rect = pygame.Rect(offset_x, offset_y, 12 * cell_size, 24 * cell_size)
         self.screen.set_clip(clip_rect)
         
         for x, y in pentomino.shape:
@@ -94,22 +80,24 @@ class UI:
         for x, y in pentomino.shape:
             px = offset_x + (pentomino.x + x) * cell_size
             py = offset_y + (pentomino.y + y) * cell_size
-            
             rect = pygame.Rect(px, py, cell_size, cell_size)
-            # Draw outline only
-            pygame.draw.rect(self.screen, pentomino.color, rect, 2) # 2px border
+            pygame.draw.rect(self.screen, pentomino.color, rect, 2)
             
         self.screen.set_clip(None)
             
     def draw_preview(self, pentomino, x, y, cell_size):
-        # Draw label
-        label = self.font.render("NEXT", True, self.text_color)
-        self.screen.blit(label, (x, y - 30))
+        # Draw Border Box
+        box_size = 6 * cell_size
+        border_rect = pygame.Rect(x - 10, y, box_size, box_size)
+        pygame.draw.rect(self.screen, self.border_color, border_rect, 2)
         
-        # Draw piece centered in a box
-        # Approximate center of 5x5 box
-        center_x = x + 2.5 * cell_size
-        center_y = y + 2.5 * cell_size
+        # Label
+        label = self.font.render("NEXT", True, self.text_color)
+        self.screen.blit(label, (x + box_size//2 - label.get_width()//2 - 10, y + 10))
+        
+        # Draw piece centered
+        center_x = x + box_size // 2 - 10 # Adjust for border offset
+        center_y = y + box_size // 2 + 10
         
         for px, py in pentomino.shape:
             self.draw_block(center_x + px * cell_size, 
@@ -117,16 +105,52 @@ class UI:
                             cell_size, pentomino.color)
 
     def draw_score(self, score, level, lines, x, y):
-        score_text = self.font.render(f"SCORE: {score}", True, self.text_color)
-        level_text = self.font.render(f"LEVEL: {level}", True, self.text_color)
-        lines_text = self.font.render(f"LINES: {lines}", True, self.text_color)
+        # Draw Border Box
+        width = 180
+        height = 150
+        border_rect = pygame.Rect(x, y, width, height)
+        pygame.draw.rect(self.screen, self.border_color, border_rect, 2)
         
-        self.screen.blit(score_text, (x, y))
-        self.screen.blit(level_text, (x, y + 40))
-        self.screen.blit(lines_text, (x, y + 80))
+        # Text
+        score_lbl = self.font.render("SCORE", True, self.border_color)
+        score_val = self.score_font.render(str(score), True, self.text_color)
         
-        pause_hint = self.font.render("Press F1 to Pause", True, (150, 150, 150))
-        self.screen.blit(pause_hint, (x, y + 140))
+        level_lbl = self.font.render("LEVEL", True, self.border_color)
+        level_val = self.score_font.render(str(level), True, self.text_color)
+        
+        lines_lbl = self.font.render("LINES", True, self.border_color)
+        lines_val = self.score_font.render(str(lines), True, self.text_color)
+        
+        # Positioning
+        padding = 10
+        current_y = y + padding
+        
+        self.screen.blit(score_lbl, (x + padding, current_y))
+        self.screen.blit(score_val, (x + width - score_val.get_width() - padding, current_y))
+        current_y += 40
+        
+        self.screen.blit(level_lbl, (x + padding, current_y))
+        self.screen.blit(level_val, (x + width - level_val.get_width() - padding, current_y))
+        current_y += 40
+        
+        self.screen.blit(lines_lbl, (x + padding, current_y))
+        self.screen.blit(lines_val, (x + width - lines_val.get_width() - padding, current_y))
+
+    def draw_instructions(self, x, y):
+        instructions = [
+            "CONTROLS:",
+            "Arrows: Move",
+            "Space: Hard Drop",
+            ", / . : Rotate",
+            "F1: Pause",
+            "ESC: Menu"
+        ]
+        
+        current_y = y
+        for line in instructions:
+            text = self.font.render(line, True, (150, 150, 150))
+            self.screen.blit(text, (x, current_y))
+            current_y += 25
 
     def draw_game_over(self, screen_width, screen_height):
         overlay = pygame.Surface((screen_width, screen_height))
@@ -138,7 +162,7 @@ class UI:
         rect = text.get_rect(center=(screen_width // 2, screen_height // 2))
         self.screen.blit(text, rect)
         
-        restart_text = self.font.render("Press SPACE to Restart", True, self.text_color)
+        restart_text = self.font.render("Press ENTER to Restart", True, self.text_color)
         restart_rect = restart_text.get_rect(center=(screen_width // 2, screen_height // 2 + 60))
         self.screen.blit(restart_text, restart_rect)
 

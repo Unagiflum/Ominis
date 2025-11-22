@@ -125,7 +125,7 @@ class Game:
                     self.audio.stop()
             
             if self.state == "MENU" or self.state == "GAMEOVER":
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
                     self.reset()
             
             # Pause Toggle
@@ -331,7 +331,7 @@ class Game:
         
         if self.state == "MENU":
             title = self.ui.large_font.render("OMINIS", True, self.ui.text_color)
-            start = self.ui.font.render("Press SPACE to Start", True, self.ui.text_color)
+            start = self.ui.font.render("Press ENTER to Start", True, self.ui.text_color)
             self.screen.blit(title, (self.screen_width // 2 - title.get_width() // 2, 200))
             self.screen.blit(start, (self.screen_width // 2 - start.get_width() // 2, 400))
             
@@ -353,8 +353,9 @@ class Game:
                 
                 self.ui.draw_pentomino(self.current_piece, offset_x, offset_y, self.cell_size)
             
-            self.ui.draw_preview(self.next_piece, offset_x + self.grid_width * self.cell_size + 20, offset_y, self.cell_size)
-            self.ui.draw_score(self.score, self.level, self.lines_cleared_total, 50, offset_y)
+            self.ui.draw_preview(self.next_piece, 600, offset_y - 5, self.cell_size)
+            self.ui.draw_score(self.score, self.level, self.lines_cleared_total, 20, offset_y - 5)
+            self.ui.draw_instructions(600, offset_y + 200)
             
             if self.state == "GAMEOVER":
                 self.ui.draw_game_over(self.screen_width, self.screen_height)

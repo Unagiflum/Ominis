@@ -6,7 +6,7 @@ class InputManager:
             'LEFT': pygame.K_LEFT,
             'RIGHT': pygame.K_RIGHT,
             'DOWN': pygame.K_DOWN,
-            'ROTATE_CW': pygame.K_UP,
+            # 'ROTATE_CW': pygame.K_UP, # Removed
             'ROTATE_CCW': pygame.K_PERIOD, # Swapped
             'ROTATE_CW_ALT': pygame.K_COMMA, # Swapped
             'HARD_DROP': pygame.K_SPACE,
