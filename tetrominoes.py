@@ -20,6 +20,14 @@ COLORS = [
     (255, 215, 0),   # Gold
     (0, 250, 154),   # Medium Spring Green
     (123, 104, 238), # Medium Slate Blue
+    # Tetromino Colors (Standard-ish)
+    (0, 255, 255),   # Cyan (I) - Duplicate but fine
+    (0, 0, 255),     # Blue (J)
+    (255, 165, 0),   # Orange (L)
+    (255, 255, 0),   # Yellow (O) - Duplicate but fine
+    (0, 128, 0),     # Green (S)
+    (128, 0, 128),   # Purple (T)
+    (255, 0, 0),     # Red (Z)
 ]
 
 # Pentomino Shapes (One-sided)
@@ -54,6 +62,15 @@ SHAPES = {
     
     'Z': [(-1, -1), (0, -1), (0, 0), (0, 1), (1, 1)],
     'Z_mirror': [(1, -1), (0, -1), (0, 0), (0, 1), (-1, 1)],
+
+    # Tetrominoes
+    'Tet_I': [(0, -1), (0, 0), (0, 1), (0, 2)],
+    'Tet_J': [(0, -1), (0, 0), (0, 1), (-1, 1)],
+    'Tet_L': [(0, -1), (0, 0), (0, 1), (1, 1)],
+    'Tet_O': [(0, 0), (1, 0), (0, 1), (1, 1)],
+    'Tet_S': [(0, 0), (1, 0), (0, 1), (-1, 1)], # S-shape
+    'Tet_T': [(-1, 0), (0, 0), (1, 0), (0, 1)],
+    'Tet_Z': [(-1, 0), (0, 0), (0, 1), (1, 1)], # Z-shape
 }
 
 class Pentomino:
