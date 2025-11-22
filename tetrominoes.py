@@ -114,11 +114,28 @@ SHAPE_COLORS = {
     'Triomino_L': (255, 140, 0), # Dark Orange
 }
 
+def get_allowed_shapes(include_pentominoes=True, include_tetrominoes=False, include_ominis=False):
+    allowed = []
+    for shape, blocks in SHAPES.items():
+        count = len(blocks)
+        if count == 5 and include_pentominoes:
+            allowed.append(shape)
+        elif count == 4 and include_tetrominoes:
+            allowed.append(shape)
+        elif count < 4 and include_ominis:
+            allowed.append(shape)
+    return allowed
+
 class Pentomino:
-    def __init__(self, x, y):
+    def __init__(self, x, y, allowed_shapes=None):
         self.x = x
         self.y = y
-        self.type = random.choice(list(SHAPES.keys()))
+        
+        if allowed_shapes:
+            self.type = random.choice(allowed_shapes)
+        else:
+            self.type = random.choice(list(SHAPES.keys()))
+            
         self.shape = SHAPES[self.type]
         self.color = SHAPE_COLORS[self.type]
         self.rotation = 0

@@ -179,3 +179,43 @@ class UI:
         resume_text = self.font.render("Press F1 to Resume", True, self.text_color)
         resume_rect = resume_text.get_rect(center=(screen_width // 2, screen_height // 2 + 60))
         self.screen.blit(resume_text, resume_rect)
+
+    def draw_checkbox(self, x, y, checked, label):
+        # Box
+        rect = pygame.Rect(x, y, 20, 20)
+        pygame.draw.rect(self.screen, self.text_color, rect, 2)
+        if checked:
+            pygame.draw.rect(self.screen, self.text_color, (x + 4, y + 4, 12, 12))
+            
+        # Label
+        text = self.font.render(label, True, self.text_color)
+        self.screen.blit(text, (x + 30, y))
+        
+        return rect
+
+    def draw_button(self, x, y, width, height, label, active):
+        rect = pygame.Rect(x, y, width, height)
+        color = self.text_color if active else (100, 100, 100)
+        pygame.draw.rect(self.screen, color, rect, 2)
+        
+        text = self.font.render(label, True, color)
+        text_rect = text.get_rect(center=rect.center)
+        self.screen.blit(text, text_rect)
+        
+        return rect
+
+    def draw_slider(self, x, y, width, value, label):
+        # Label
+        text = self.font.render(label, True, self.text_color)
+        self.screen.blit(text, (x, y - 25))
+        
+        # Bar
+        bar_rect = pygame.Rect(x, y, width, 10)
+        pygame.draw.rect(self.screen, (100, 100, 100), bar_rect)
+        
+        # Handle
+        handle_x = x + int(value * width)
+        handle_rect = pygame.Rect(handle_x - 5, y - 5, 10, 20)
+        pygame.draw.rect(self.screen, self.text_color, handle_rect)
+        
+        return bar_rect

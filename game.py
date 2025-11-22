@@ -31,22 +31,31 @@ class Game:
         self.next_piece = None
         
         self.fall_time = 0
-        self.fall_speed = 1000 
+        self.right_held_time = 0
+        self.last_move_time = 0
+
+        # Menu State
+        self.include_pentominoes = True
+        self.include_tetrominoes = False
+        self.include_ominis = False
+        self.volume = 0.5
+        self.allowed_shapes = []
         
-        # Animation state
-        self.clearing_lines = []
-        self.animation_timer = 0
-        self.row_offsets = [0] * self.grid_height
+        # UI Rects (for click detection)
+        self.chk_pent_rect = None
+        self.chk_tet_rect = None
+        self.chk_omi_rect = None
+        self.btn_start_rect = None
+        self.slider_rect = None
+        self.dragging_slider = False
 
         # Input handling state (DAS - Delayed Auto Shift)
         self.das_delay = 200 # ms before repeat starts
         self.das_repeat = 50 # ms between repeats
         self.left_held_time = 0
-        self.right_held_time = 0
-        self.last_move_time = 0
 
     def spawn_piece(self):
-        p = Pentomino(self.grid_width // 2, 0)
+        p = Pentomino(self.grid_width // 2, 0, self.allowed_shapes)
         # Adjust y to ensure the shape starts just above the board
         min_y = min(y for x, y in p.shape)
         p.y = -min_y - 2
@@ -57,7 +66,16 @@ class Game:
         self.score = 0
         self.level = 1
         self.lines_cleared_total = 0
+        self.lines_cleared_total = 0
         self.fall_speed = 1000
+        
+        # Determine allowed shapes based on selection
+        from tetrominoes import get_allowed_shapes
+        self.allowed_shapes = get_allowed_shapes(self.include_pentominoes, self.include_tetrominoes, self.include_ominis)
+        
+        # Fallback if nothing selected (should be prevented by UI, but safety first)
+        if not self.allowed_shapes:
+             self.allowed_shapes = get_allowed_shapes(True, False, False)
         self.current_piece = self.spawn_piece()
         self.next_piece = self.spawn_piece()
         self.state = "PLAYING"
@@ -125,7 +143,34 @@ class Game:
                     self.state = "MENU"
                     self.audio.stop()
             
-            if self.state == "MENU" or self.state == "GAMEOVER":
+            if self.state == "MENU":
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1: # Left click
+                        mouse_pos = event.pos
+                        if self.chk_pent_rect and self.chk_pent_rect.collidepoint(mouse_pos):
+                            self.include_pentominoes = not self.include_pentominoes
+                        elif self.chk_tet_rect and self.chk_tet_rect.collidepoint(mouse_pos):
+                            self.include_tetrominoes = not self.include_tetrominoes
+                        elif self.chk_omi_rect and self.chk_omi_rect.collidepoint(mouse_pos):
+                            self.include_ominis = not self.include_ominis
+                        elif self.btn_start_rect and self.btn_start_rect.collidepoint(mouse_pos):
+                            if self.include_pentominoes or self.include_tetrominoes or self.include_ominis:
+                                self.reset()
+                                
+            if self.state == "PLAYING" or self.state == "PAUSED" or self.state == "GAMEOVER":
+                 if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        if self.slider_rect and self.slider_rect.collidepoint(event.pos):
+                            self.dragging_slider = True
+                            self.update_volume(event.pos[0])
+                 elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:
+                        self.dragging_slider = False
+                 elif event.type == pygame.MOUSEMOTION:
+                    if self.dragging_slider:
+                        self.update_volume(event.pos[0])
+
+            if self.state == "GAMEOVER":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
                     self.reset()
             
@@ -323,7 +368,7 @@ class Game:
             if all_done:
                 self.state = "PLAYING"
                 self.current_piece = self.next_piece
-                self.next_piece = Pentomino(self.grid_width // 2, 0)
+                self.next_piece = self.spawn_piece()
                 if self.grid.check_collision(self.current_piece):
                     self.state = "GAMEOVER"
 
@@ -332,9 +377,21 @@ class Game:
         
         if self.state == "MENU":
             title = self.ui.large_font.render("OMINIS", True, self.ui.text_color)
-            start = self.ui.font.render("Press ENTER to Start", True, self.ui.text_color)
-            self.screen.blit(title, (self.screen_width // 2 - title.get_width() // 2, 200))
-            self.screen.blit(start, (self.screen_width // 2 - start.get_width() // 2, 400))
+            self.screen.blit(title, (self.screen_width // 2 - title.get_width() // 2, 100))
+            
+            # Checkboxes
+            start_y = 250
+            self.chk_pent_rect = self.ui.draw_checkbox(300, start_y, self.include_pentominoes, "Pentominoes (5)")
+            self.chk_tet_rect = self.ui.draw_checkbox(300, start_y + 40, self.include_tetrominoes, "Tetrominoes (4)")
+            self.chk_omi_rect = self.ui.draw_checkbox(300, start_y + 80, self.include_ominis, "Ominis (<4)")
+            
+            # Start Button
+            active = self.include_pentominoes or self.include_tetrominoes or self.include_ominis
+            self.btn_start_rect = self.ui.draw_button(self.screen_width // 2 - 100, 450, 200, 50, "START GAME", active)
+            
+            # Instructions
+            inst = self.ui.font.render("Select at least one group", True, (150, 150, 150))
+            self.screen.blit(inst, (self.screen_width // 2 - inst.get_width() // 2, 520))
             
         else:
             offset_x = (self.screen_width - self.grid_width * self.cell_size) // 2
@@ -358,6 +415,9 @@ class Game:
             self.ui.draw_score(self.score, self.level, self.lines_cleared_total, 10, offset_y - 5)
             self.ui.draw_instructions(600, offset_y + 240)
             
+            # Volume Slider
+            self.slider_rect = self.ui.draw_slider(600, offset_y + 450, 150, self.volume, "Volume")
+            
             if self.state == "GAMEOVER":
                 self.ui.draw_game_over(self.screen_width, self.screen_height)
                 
@@ -365,6 +425,14 @@ class Game:
                 self.ui.draw_pause_screen(self.screen_width, self.screen_height)
         
         pygame.display.flip()
+
+    def update_volume(self, mouse_x):
+        if self.slider_rect:
+            # Calculate volume from mouse position relative to slider
+            rel_x = mouse_x - self.slider_rect.x
+            vol = rel_x / self.slider_rect.width
+            self.volume = max(0.0, min(1.0, vol))
+            pygame.mixer.music.set_volume(self.volume)
 
     def run(self):
         running = True
