@@ -124,6 +124,9 @@ class UI:
         self.screen.blit(score_text, (x, y))
         self.screen.blit(level_text, (x, y + 40))
         self.screen.blit(lines_text, (x, y + 80))
+        
+        pause_hint = self.font.render("Press F1 to Pause", True, (150, 150, 150))
+        self.screen.blit(pause_hint, (x, y + 140))
 
     def draw_game_over(self, screen_width, screen_height):
         overlay = pygame.Surface((screen_width, screen_height))
@@ -138,3 +141,17 @@ class UI:
         restart_text = self.font.render("Press SPACE to Restart", True, self.text_color)
         restart_rect = restart_text.get_rect(center=(screen_width // 2, screen_height // 2 + 60))
         self.screen.blit(restart_text, restart_rect)
+
+    def draw_pause_screen(self, screen_width, screen_height):
+        overlay = pygame.Surface((screen_width, screen_height))
+        overlay.set_alpha(150)
+        overlay.fill((0, 0, 0))
+        self.screen.blit(overlay, (0, 0))
+        
+        text = self.large_font.render("PAUSED", True, self.text_color)
+        rect = text.get_rect(center=(screen_width // 2, screen_height // 2))
+        self.screen.blit(text, rect)
+        
+        resume_text = self.font.render("Press F1 to Resume", True, self.text_color)
+        resume_rect = resume_text.get_rect(center=(screen_width // 2, screen_height // 2 + 60))
+        self.screen.blit(resume_text, resume_rect)

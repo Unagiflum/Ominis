@@ -22,7 +22,7 @@ class Game:
         self.ui = UI(self.screen)
         self.audio = AudioPlayer("assets/music", "assets/sounds")
         
-        self.state = "MENU" # MENU, PLAYING, GAMEOVER, ANIMATING_CLEAR, ANIMATING_DROP
+        self.state = "MENU" # MENU, PLAYING, GAMEOVER, ANIMATING_CLEAR, ANIMATING_DROP, PAUSED
         self.score = 0
         self.level = 1
         self.lines_cleared_total = 0
@@ -127,6 +127,15 @@ class Game:
             if self.state == "MENU" or self.state == "GAMEOVER":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
                     self.reset()
+            
+            # Pause Toggle
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_F1:
+                if self.state == "PLAYING":
+                    self.state = "PAUSED"
+                    self.audio.pause()
+                elif self.state == "PAUSED":
+                    self.state = "PLAYING"
+                    self.audio.unpause()
             
             elif self.state == "PLAYING":
                 if action == "LEFT":
@@ -253,9 +262,13 @@ class Game:
                 self.row_offsets[new_y] = (old_y - new_y) * self.cell_size
 
     def update(self):
-        self.audio.update()
         current_time = pygame.time.get_ticks()
         
+        if self.state == "PAUSED":
+            return
+
+        self.audio.update()
+
         if self.state == "PLAYING":
             # Determine fall speed
             current_fall_speed = self.fall_speed
@@ -345,6 +358,9 @@ class Game:
             
             if self.state == "GAMEOVER":
                 self.ui.draw_game_over(self.screen_width, self.screen_height)
+                
+            if self.state == "PAUSED":
+                self.ui.draw_pause_screen(self.screen_width, self.screen_height)
         
         pygame.display.flip()
 

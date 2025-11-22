@@ -69,3 +69,9 @@ class AudioPlayer:
     def update(self):
         if self.enabled and self.playlist and not pygame.mixer.music.get_busy():
             self.play_next()
+
+    def pause(self):
+        pygame.mixer.music.pause()
+
+    def unpause(self):
+        pygame.mixer.music.unpause()
