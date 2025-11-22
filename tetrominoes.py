@@ -28,6 +28,10 @@ COLORS = [
     (0, 128, 0),     # Green (S)
     (128, 0, 128),   # Purple (T)
     (255, 0, 0),     # Red (Z)
+    # Ominis Colors
+    (200, 200, 200), # Silver (Domino)
+    (255, 215, 0),   # Gold (Triomino I)
+    (255, 140, 0),   # Dark Orange (Triomino L)
 ]
 
 # Pentomino Shapes (One-sided)
@@ -71,6 +75,11 @@ SHAPES = {
     'Tet_S': [(0, 0), (1, 0), (0, 1), (-1, 1)], # S-shape
     'Tet_T': [(-1, 0), (0, 0), (1, 0), (0, 1)],
     'Tet_Z': [(-1, 0), (0, 0), (0, 1), (1, 1)], # Z-shape
+    
+    # Ominis
+    'Domino': [(0, 0), (0, 1)],
+    'Triomino_I': [(0, -1), (0, 0), (0, 1)],
+    'Triomino_L': [(0, 0), (0, 1), (1, 0)],
 }
 
 class Pentomino:

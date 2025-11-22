@@ -14,7 +14,7 @@ class Game:
         self.cell_size = 30
         
         self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
-        pygame.display.set_caption("Pentomino Tetris")
+        pygame.display.set_caption("Ominis")
         
         self.clock = pygame.time.Clock()
         self.grid = Grid(self.grid_width, self.grid_height, self.cell_size)
@@ -317,7 +317,7 @@ class Game:
         self.screen.fill(self.ui.bg_color)
         
         if self.state == "MENU":
-            title = self.ui.large_font.render("PENTOMINO TETRIS", True, self.ui.text_color)
+            title = self.ui.large_font.render("OMINIS", True, self.ui.text_color)
             start = self.ui.font.render("Press SPACE to Start", True, self.ui.text_color)
             self.screen.blit(title, (self.screen_width // 2 - title.get_width() // 2, 200))
             self.screen.blit(start, (self.screen_width // 2 - start.get_width() // 2, 400))
