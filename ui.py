@@ -87,7 +87,7 @@ class UI:
             
     def draw_preview(self, pentomino, x, y, cell_size):
         # Draw Border Box
-        box_size = 6 * cell_size
+        box_size = 7 * cell_size
         border_rect = pygame.Rect(x - 10, y, box_size, box_size)
         pygame.draw.rect(self.screen, self.border_color, border_rect, 2)
         

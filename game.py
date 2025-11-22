@@ -63,6 +63,7 @@ class Game:
         self.state = "PLAYING"
         self.left_held_time = 0
         self.right_held_time = 0
+        self.audio.reset_sequence()
         self.audio.start()
 
     def update_score(self, lines):
@@ -355,7 +356,7 @@ class Game:
             
             self.ui.draw_preview(self.next_piece, 600, offset_y - 5, self.cell_size)
             self.ui.draw_score(self.score, self.level, self.lines_cleared_total, 20, offset_y - 5)
-            self.ui.draw_instructions(600, offset_y + 200)
+            self.ui.draw_instructions(600, offset_y + 240)
             
             if self.state == "GAMEOVER":
                 self.ui.draw_game_over(self.screen_width, self.screen_height)

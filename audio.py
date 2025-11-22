@@ -16,8 +16,11 @@ class AudioPlayer:
             self.playlist = [os.path.join(self.music_dir, f) for f in os.listdir(self.music_dir) if f.endswith('.mp3')]
             self.playlist.sort() # Keep master list sorted
         
-        self.play_queue = []
-        self.last_track = None
+            self.playlist.sort() # Keep master list sorted
+        
+        self.current_index = 0
+        self.direction = 1 # 1 for forward, -1 for backward
+        self.sequence_initialized = False
         
         # Load sound effects
         self.clear_sound = None
@@ -30,6 +33,9 @@ class AudioPlayer:
 
     def start(self):
         self.enabled = True
+        if not self.sequence_initialized:
+            self.reset_sequence()
+            
         if not pygame.mixer.music.get_busy():
             self.play_next()
 
@@ -41,21 +47,25 @@ class AudioPlayer:
         if self.clear_sound:
             self.clear_sound.play()
         
+    def reset_sequence(self):
+        if not self.playlist:
+            return
+            
+        # Random start index
+        self.current_index = random.randint(0, len(self.playlist) - 1)
+        # Random direction
+        self.direction = random.choice([1, -1])
+        self.sequence_initialized = True
+        print(f"Music Sequence: Start Index {self.current_index}, Direction {self.direction}")
+
     def play_next(self):
         if not self.playlist:
             return
         
-        # Refill queue if empty
-        if not self.play_queue:
-            self.play_queue = self.playlist[:]
-            random.shuffle(self.play_queue)
-            
-            # Avoid repeating the last track immediately if possible
-            if self.last_track and len(self.play_queue) > 1 and self.play_queue[0] == self.last_track:
-                self.play_queue[0], self.play_queue[-1] = self.play_queue[-1], self.play_queue[0]
+        track = self.playlist[self.current_index]
         
-        track = self.play_queue.pop(0)
-        self.last_track = track
+        # Update index for next time
+        self.current_index = (self.current_index + self.direction) % len(self.playlist)
         
         try:
             pygame.mixer.music.load(track)
