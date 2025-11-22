@@ -1,4 +1,5 @@
 import pygame
+import math
 from grid import Grid
 from tetrominoes import Pentomino
 from input_manager import InputManager
@@ -31,6 +32,7 @@ class Game:
         self.next_piece = None
         
         self.fall_time = 0
+        self.fall_speed = 1000
         self.right_held_time = 0
         self.last_move_time = 0
 
@@ -92,7 +94,7 @@ class Game:
             
             if self.lines_cleared_total >= self.level * 5:
                 self.level += 1
-                self.fall_speed = max(100, self.fall_speed - 50)
+                self.fall_speed = max(50, self.fall_speed - 50)
 
     def handle_input(self):
         current_time = pygame.time.get_ticks()
@@ -314,6 +316,12 @@ class Game:
             return
 
         self.audio.update()
+        
+        # Update music speed based on fall speed
+        # Base speed is 1000ms. As fall_speed decreases, ratio increases.
+        # Use 4th root as requested: (1000 / current) ^ 0.25
+        ratio = (1000 / max(50, self.fall_speed)) ** 0.25
+        self.audio.set_speed(ratio)
 
         if self.state == "PLAYING":
             # Determine fall speed
@@ -432,7 +440,8 @@ class Game:
             rel_x = mouse_x - self.slider_rect.x
             vol = rel_x / self.slider_rect.width
             self.volume = max(0.0, min(1.0, vol))
-            pygame.mixer.music.set_volume(self.volume)
+            self.volume = max(0.0, min(1.0, vol))
+            self.audio.set_volume(self.volume)
 
     def run(self):
         running = True
@@ -442,4 +451,5 @@ class Game:
             self.draw()
             self.clock.tick(60)
         
+        self.audio.cleanup()
         pygame.quit()
