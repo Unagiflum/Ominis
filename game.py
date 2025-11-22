@@ -392,7 +392,7 @@ class Game:
             start_y = 250
             self.chk_pent_rect = self.ui.draw_checkbox(300, start_y, self.include_pentominoes, "Pentominoes (5)", mouse_pos)
             self.chk_tet_rect = self.ui.draw_checkbox(300, start_y + 40, self.include_tetrominoes, "Tetrominoes (4)", mouse_pos)
-            self.chk_omi_rect = self.ui.draw_checkbox(300, start_y + 80, self.include_ominis, "Ominis (<4)", mouse_pos)
+            self.chk_omi_rect = self.ui.draw_checkbox(300, start_y + 80, self.include_ominis, "Twos and Threes", mouse_pos)
             
             # Start Button
             active = self.include_pentominoes or self.include_tetrominoes or self.include_ominis

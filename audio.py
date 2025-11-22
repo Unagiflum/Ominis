@@ -163,7 +163,9 @@ class AudioPlayer:
 
     def play_clear(self):
         if self.clear_sound:
-            self.clear_sound.set_volume(self.volume)
+            # Boost volume for sound effect (2x master volume, max 1.0)
+            boosted_vol = min(1.0, self.volume * 2.0)
+            self.clear_sound.set_volume(boosted_vol)
             self.clear_sound.play()
         
     def play_next(self):

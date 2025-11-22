@@ -139,6 +139,10 @@ class Pentomino:
         self.shape = SHAPES[self.type]
         self.color = SHAPE_COLORS[self.type]
         self.rotation = 0
+        
+        # Random Rotation
+        for _ in range(random.randint(0, 3)):
+            self.rotate_right()
 
     def rotate_right(self):
         self.rotation = (self.rotation + 1) % 4
