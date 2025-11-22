@@ -82,13 +82,45 @@ SHAPES = {
     'Triomino_L': [(0, 0), (0, 1), (1, 0)],
 }
 
+# Shape to Color mapping (explicit to avoid index issues)
+SHAPE_COLORS = {
+    'I': (0, 255, 255),      # Cyan
+    'T': (128, 0, 128),      # Purple
+    'U': (255, 165, 0),      # Orange
+    'V': (255, 0, 0),        # Red
+    'W': (0, 255, 0),        # Lime Green
+    'X': (255, 255, 0),      # Yellow
+    'F': (255, 105, 180),    # Hot Pink
+    'F_mirror': (255, 20, 147),  # Deep Pink
+    'L': (30, 144, 255),     # Dodger Blue
+    'L_mirror': (135, 206, 235), # Sky Blue
+    'N': (173, 255, 47),     # Green Yellow
+    'N_mirror': (0, 250, 154),   # Medium Spring Green
+    'P': (147, 112, 219),    # Medium Purple
+    'P_mirror': (138, 43, 226),  # Blue Violet
+    'Y': (255, 160, 122),    # Light Salmon
+    'Y_mirror': (255, 69, 0),    # Orange Red
+    'Z': (221, 160, 221),    # Plum
+    'Z_mirror': (255, 0, 255),   # Magenta
+    'Tet_I': (0, 255, 255),  # Cyan
+    'Tet_J': (0, 0, 255),    # Blue
+    'Tet_L': (255, 165, 0),  # Orange
+    'Tet_O': (255, 255, 0),  # Yellow
+    'Tet_S': (0, 128, 0),    # Green
+    'Tet_T': (128, 0, 128),  # Purple
+    'Tet_Z': (255, 0, 0),    # Red
+    'Domino': (200, 200, 200),   # Silver
+    'Triomino_I': (255, 215, 0), # Gold
+    'Triomino_L': (255, 140, 0), # Dark Orange
+}
+
 class Pentomino:
     def __init__(self, x, y):
         self.x = x
         self.y = y
         self.type = random.choice(list(SHAPES.keys()))
         self.shape = SHAPES[self.type]
-        self.color = COLORS[list(SHAPES.keys()).index(self.type)]
+        self.color = SHAPE_COLORS[self.type]
         self.rotation = 0
 
     def rotate_right(self):

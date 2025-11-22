@@ -12,8 +12,8 @@ class AudioPlayer:
 
     def scan_music(self):
         if os.path.exists(self.music_dir):
-            # Look for mp3s
-            self.playlist = [os.path.join(self.music_dir, f) for f in os.listdir(self.music_dir) if f.endswith('.mp3')]
+            # Look for MIDI files
+            self.playlist = [os.path.join(self.music_dir, f) for f in os.listdir(self.music_dir) if f.endswith('.mid')]
             self.playlist.sort() # Keep master list sorted
         
             self.playlist.sort() # Keep master list sorted

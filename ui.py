@@ -88,15 +88,15 @@ class UI:
     def draw_preview(self, pentomino, x, y, cell_size):
         # Draw Border Box
         box_size = 7 * cell_size
-        border_rect = pygame.Rect(x - 10, y, box_size, box_size)
+        border_rect = pygame.Rect(x, y, box_size, box_size)
         pygame.draw.rect(self.screen, self.border_color, border_rect, 2)
         
         # Label
         label = self.font.render("NEXT", True, self.text_color)
-        self.screen.blit(label, (x + box_size//2 - label.get_width()//2 - 10, y + 10))
+        self.screen.blit(label, (x + box_size//2 - label.get_width()//2, y + 10))
         
         # Draw piece centered
-        center_x = x + box_size // 2 - 10 # Adjust for border offset
+        center_x = x + box_size // 2
         center_y = y + box_size // 2 + 10
         
         for px, py in pentomino.shape:
