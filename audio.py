@@ -15,7 +15,7 @@ class MidiThread(threading.Thread):
         self.pause_event = threading.Event()
         self.pause_event.set() # Start unpaused
         self.speed_factor = 1.0
-        self.volume = 0.5
+        self.volume = 0.7
         self.daemon = True
 
     def run(self):
@@ -71,7 +71,9 @@ class MidiThread(threading.Thread):
         
     def update_volume(self):
         # Send Channel Volume (CC 7) to all 16 channels
-        val = int(self.volume * 127)
+        # Scale by 1.5 so 0.7 input -> ~1.0 output
+        scaled_vol = min(1.0, self.volume * 1.5)
+        val = int(scaled_vol * 127)
         for i in range(16):
             self.midi_out.write_short(0xB0 + i, 7, val)
 
@@ -163,8 +165,8 @@ class AudioPlayer:
 
     def play_clear(self):
         if self.clear_sound:
-            # Boost volume for sound effect (2x master volume, max 1.0)
-            boosted_vol = min(1.0, self.volume * 2.0)
+            # Boost volume for sound effect (3x master volume, max 1.0)
+            boosted_vol = min(1.0, self.volume * 3.0)
             self.clear_sound.set_volume(boosted_vol)
             self.clear_sound.play()
         
