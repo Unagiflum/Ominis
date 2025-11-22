@@ -13,21 +13,25 @@ class UI:
         rect = pygame.Rect(x, y, size, size)
         pygame.draw.rect(self.screen, color, rect)
         
-        # Subtle texture/bevel effect
-        highlight = (min(color[0] + 30, 255), min(color[1] + 30, 255), min(color[2] + 30, 255))
-        shadow = (max(color[0] - 30, 0), max(color[1] - 30, 0), max(color[2] - 30, 0))
+        # Bevel Effect
+        # Lighter on Top and Left
+        highlight = (min(color[0] + 50, 255), min(color[1] + 50, 255), min(color[2] + 50, 255))
+        # Darker on Bottom and Right
+        shadow = (max(color[0] - 50, 0), max(color[1] - 50, 0), max(color[2] - 50, 0))
         
-        # Top-Left Highlight
-        pygame.draw.line(self.screen, highlight, (x, y), (x + size, y), 2)
-        pygame.draw.line(self.screen, highlight, (x, y), (x, y + size), 2)
+        border_width = 3
         
-        # Bottom-Right Shadow
-        pygame.draw.line(self.screen, shadow, (x, y + size), (x + size, y + size), 2)
-        pygame.draw.line(self.screen, shadow, (x + size, y), (x + size, y + size), 2)
+        # Top
+        pygame.draw.polygon(self.screen, highlight, [(x, y), (x + size, y), (x + size - border_width, y + border_width), (x + border_width, y + border_width)])
+        # Left
+        pygame.draw.polygon(self.screen, highlight, [(x, y), (x + border_width, y + border_width), (x + border_width, y + size - border_width), (x, y + size)])
         
-        # Inner square for "texture" feel
-        inner_rect = pygame.Rect(x + 4, y + 4, size - 8, size - 8)
-        pygame.draw.rect(self.screen, (color[0], color[1], color[2], 100), inner_rect, 1)
+        # Bottom
+        pygame.draw.polygon(self.screen, shadow, [(x, y + size), (x + size, y + size), (x + size - border_width, y + size - border_width), (x + border_width, y + size - border_width)])
+        # Right
+        pygame.draw.polygon(self.screen, shadow, [(x + size, y), (x + size, y + size), (x + size - border_width, y + size - border_width), (x + size - border_width, y + border_width)])
+        
+        # No inner square, just the bevel for a clean look
 
     def draw_grid(self, grid, offset_x, offset_y, row_offsets=None, flash_lines=None):
         # Draw grid background
@@ -81,6 +85,20 @@ class UI:
                             offset_y + (pentomino.y + y) * cell_size, 
                             cell_size, pentomino.color)
         
+        self.screen.set_clip(None)
+
+    def draw_ghost_pentomino(self, pentomino, offset_x, offset_y, cell_size):
+        clip_rect = pygame.Rect(offset_x, offset_y, 12 * cell_size, 24 * cell_size)
+        self.screen.set_clip(clip_rect)
+        
+        for x, y in pentomino.shape:
+            px = offset_x + (pentomino.x + x) * cell_size
+            py = offset_y + (pentomino.y + y) * cell_size
+            
+            rect = pygame.Rect(px, py, cell_size, cell_size)
+            # Draw outline only
+            pygame.draw.rect(self.screen, pentomino.color, rect, 2) # 2px border
+            
         self.screen.set_clip(None)
             
     def draw_preview(self, pentomino, x, y, cell_size):

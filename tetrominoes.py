@@ -64,11 +64,6 @@ class Pentomino:
         self.shape = SHAPES[self.type]
         self.color = COLORS[list(SHAPES.keys()).index(self.type)]
         self.rotation = 0
-        
-        # Revert: Allow spawning off-screen (y < 0)
-        # We will handle visibility in UI
-        min_y = min(y for x, y in self.shape)
-        self.y = -min_y - 2 # Spawn just above the board
 
     def rotate_right(self):
         self.rotation = (self.rotation + 1) % 4

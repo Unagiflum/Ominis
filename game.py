@@ -20,7 +20,7 @@ class Game:
         self.grid = Grid(self.grid_width, self.grid_height, self.cell_size)
         self.input_manager = InputManager()
         self.ui = UI(self.screen)
-        self.audio = AudioPlayer("assets/music")
+        self.audio = AudioPlayer("assets/music", "assets/sounds")
         
         self.state = "MENU" # MENU, PLAYING, GAMEOVER, ANIMATING_CLEAR, ANIMATING_DROP
         self.score = 0
@@ -38,15 +38,32 @@ class Game:
         self.animation_timer = 0
         self.row_offsets = [0] * self.grid_height
 
+        # Input handling state (DAS - Delayed Auto Shift)
+        self.das_delay = 200 # ms before repeat starts
+        self.das_repeat = 50 # ms between repeats
+        self.left_held_time = 0
+        self.right_held_time = 0
+        self.last_move_time = 0
+
+    def spawn_piece(self):
+        p = Pentomino(self.grid_width // 2, 0)
+        # Adjust y to ensure the shape starts just above the board
+        min_y = min(y for x, y in p.shape)
+        p.y = -min_y - 2
+        return p
+
     def reset(self):
         self.grid = Grid(self.grid_width, self.grid_height, self.cell_size)
         self.score = 0
         self.level = 1
         self.lines_cleared_total = 0
         self.fall_speed = 1000
-        self.current_piece = Pentomino(self.grid_width // 2, 0)
-        self.next_piece = Pentomino(self.grid_width // 2, 0)
+        self.current_piece = self.spawn_piece()
+        self.next_piece = self.spawn_piece()
         self.state = "PLAYING"
+        self.left_held_time = 0
+        self.right_held_time = 0
+        self.audio.start()
 
     def update_score(self, lines):
         if lines > 0:
@@ -59,11 +76,53 @@ class Game:
                 self.fall_speed = max(100, self.fall_speed - 50)
 
     def handle_input(self):
+        current_time = pygame.time.get_ticks()
+        
+        # Continuous Input (DAS)
+        if self.state == "PLAYING":
+            # Left
+            if self.input_manager.is_left_held():
+                if self.left_held_time == 0: # Just pressed
+                    self.left_held_time = current_time
+                    self.last_move_time = current_time
+                    pass 
+                else:
+                    # Check DAS
+                    held_duration = current_time - self.left_held_time
+                    if held_duration > self.das_delay:
+                        if current_time - self.last_move_time > self.das_repeat:
+                            if not self.grid.check_collision(self.current_piece, offset_x=-1):
+                                self.current_piece.x -= 1
+                            self.last_move_time = current_time
+            else:
+                self.left_held_time = 0
+
+            # Right
+            if self.input_manager.is_right_held():
+                if self.right_held_time == 0:
+                    self.right_held_time = current_time
+                    self.last_move_time = current_time
+                    pass
+                else:
+                    held_duration = current_time - self.right_held_time
+                    if held_duration > self.das_delay:
+                        if current_time - self.last_move_time > self.das_repeat:
+                            if not self.grid.check_collision(self.current_piece, offset_x=1):
+                                self.current_piece.x += 1
+                            self.last_move_time = current_time
+            else:
+                self.right_held_time = 0
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
             
             action = self.input_manager.get_action(event)
+            
+            if action == "EXIT":
+                if self.state == "PLAYING" or self.state == "GAMEOVER":
+                    self.state = "MENU"
+                    self.audio.stop()
             
             if self.state == "MENU" or self.state == "GAMEOVER":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
@@ -73,14 +132,20 @@ class Game:
                 if action == "LEFT":
                     if not self.grid.check_collision(self.current_piece, offset_x=-1):
                         self.current_piece.x -= 1
+                    self.left_held_time = current_time # Start DAS timer
+                    self.last_move_time = current_time
+                    
                 elif action == "RIGHT":
                     if not self.grid.check_collision(self.current_piece, offset_x=1):
                         self.current_piece.x += 1
+                    self.right_held_time = current_time # Start DAS timer
+                    self.last_move_time = current_time
+                    
                 elif action == "DOWN":
                     if not self.grid.check_collision(self.current_piece, offset_y=1):
                         self.current_piece.y += 1
                         self.score += 1 
-                        self.fall_time = pygame.time.get_ticks() # Reset fall timer on manual drop
+                        self.fall_time = pygame.time.get_ticks() 
                 elif action == "ROTATE_CW" or action == "ROTATE_CW_ALT":
                     self.current_piece.rotate_right()
                     if self.grid.check_collision(self.current_piece):
@@ -89,8 +154,29 @@ class Game:
                     self.current_piece.rotate_left()
                     if self.grid.check_collision(self.current_piece):
                         self.current_piece.rotate_right() 
+                elif action == "HARD_DROP":
+                    while not self.grid.check_collision(self.current_piece, offset_y=1):
+                        self.current_piece.y += 1
+                        self.score += 2 # Bonus for hard drop
+                    # Force immediate lock
+                    self.fall_time = 0 # Trigger update immediately
 
         return True
+
+    def get_ghost_piece(self):
+        if not self.current_piece:
+            return None
+        
+        ghost = Pentomino(self.current_piece.x, self.current_piece.y)
+        ghost.shape = self.current_piece.shape # Copy shape
+        ghost.color = self.current_piece.color
+        ghost.type = self.current_piece.type
+        
+        # Move down until collision
+        while not self.grid.check_collision(ghost, offset_y=1):
+            ghost.y += 1
+            
+        return ghost
 
     def check_and_clear_lines(self):
         # Identify lines to clear
@@ -188,12 +274,13 @@ class Game:
                         pass # State changed to ANIMATING_CLEAR
                     else:
                         self.current_piece = self.next_piece
-                        self.next_piece = Pentomino(self.grid_width // 2, 0)
+                        self.next_piece = self.spawn_piece()
                         # Revert spawn adjustment: check collision immediately?
                         # If we spawn at y=-2, we might not collide yet.
                         # But if we can't move down, it's game over.
                         if self.grid.check_collision(self.current_piece):
                              self.state = "GAMEOVER"
+                             self.audio.stop()
                 
                 self.fall_time = current_time
                 
@@ -246,6 +333,11 @@ class Game:
             self.ui.draw_grid(self.grid, offset_x, offset_y, offsets, flash)
             
             if self.state == "PLAYING":
+                # Draw Ghost Piece
+                ghost = self.get_ghost_piece()
+                if ghost and ghost.y != self.current_piece.y:
+                    self.ui.draw_ghost_pentomino(ghost, offset_x, offset_y, self.cell_size)
+                
                 self.ui.draw_pentomino(self.current_piece, offset_x, offset_y, self.cell_size)
             
             self.ui.draw_preview(self.next_piece, offset_x + self.grid_width * self.cell_size + 20, offset_y, self.cell_size)
