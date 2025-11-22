@@ -106,7 +106,7 @@ class UI:
 
     def draw_score(self, score, level, lines, x, y):
         # Draw Border Box
-        width = 180
+        width = 210
         height = 150
         border_rect = pygame.Rect(x, y, width, height)
         pygame.draw.rect(self.screen, self.border_color, border_rect, 2)
