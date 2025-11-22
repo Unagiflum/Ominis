@@ -381,7 +381,8 @@ class Game:
                     self.state = "GAMEOVER"
 
     def draw(self):
-        self.screen.fill(self.ui.bg_color)
+        self.ui.draw_background()
+        mouse_pos = pygame.mouse.get_pos()
         
         if self.state == "MENU":
             title = self.ui.large_font.render("OMINIS", True, self.ui.text_color)
@@ -389,13 +390,13 @@ class Game:
             
             # Checkboxes
             start_y = 250
-            self.chk_pent_rect = self.ui.draw_checkbox(300, start_y, self.include_pentominoes, "Pentominoes (5)")
-            self.chk_tet_rect = self.ui.draw_checkbox(300, start_y + 40, self.include_tetrominoes, "Tetrominoes (4)")
-            self.chk_omi_rect = self.ui.draw_checkbox(300, start_y + 80, self.include_ominis, "Ominis (<4)")
+            self.chk_pent_rect = self.ui.draw_checkbox(300, start_y, self.include_pentominoes, "Pentominoes (5)", mouse_pos)
+            self.chk_tet_rect = self.ui.draw_checkbox(300, start_y + 40, self.include_tetrominoes, "Tetrominoes (4)", mouse_pos)
+            self.chk_omi_rect = self.ui.draw_checkbox(300, start_y + 80, self.include_ominis, "Ominis (<4)", mouse_pos)
             
             # Start Button
             active = self.include_pentominoes or self.include_tetrominoes or self.include_ominis
-            self.btn_start_rect = self.ui.draw_button(self.screen_width // 2 - 100, 450, 200, 50, "START GAME", active)
+            self.btn_start_rect = self.ui.draw_button(self.screen_width // 2 - 100, 450, 200, 50, "START GAME", active, mouse_pos)
             
             # Instructions
             inst = self.ui.font.render("Select at least one group", True, (150, 150, 150))
@@ -424,7 +425,7 @@ class Game:
             self.ui.draw_instructions(600, offset_y + 240)
             
             # Volume Slider
-            self.slider_rect = self.ui.draw_slider(600, offset_y + 450, 150, self.volume, "Volume")
+            self.slider_rect = self.ui.draw_slider(600, offset_y + 450, 150, self.volume, "Volume", mouse_pos)
             
             if self.state == "GAMEOVER":
                 self.ui.draw_game_over(self.screen_width, self.screen_height)

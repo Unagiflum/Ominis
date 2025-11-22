@@ -1,4 +1,6 @@
 import pygame
+import math
+import time
 
 class UI:
     def __init__(self, screen, font_path=None):
@@ -8,33 +10,74 @@ class UI:
         self.large_font = pygame.font.SysFont("Consolas", 40, bold=True)
         self.score_font = pygame.font.SysFont("Consolas", 28, bold=True)
         
-        self.bg_color = (20, 20, 25) # Dark background
-        self.grid_bg_color = (10, 10, 15)
-        self.text_color = (220, 220, 220)
-        self.border_color = (100, 100, 100) # Grey border
+        self.bg_color = (10, 10, 20) # Deep dark blue/black
+        self.grid_bg_color = (5, 5, 10)
+        self.text_color = (200, 240, 255) # Cyan-ish white
+        self.border_color = (0, 255, 255) # Cyan neon
+        self.accent_color = (255, 0, 255) # Magenta neon
+        
+        self.start_time = time.time()
+
+    def get_pulse(self, speed=2.0):
+        t = time.time() - self.start_time
+        return (math.sin(t * speed) + 1) / 2 # 0.0 to 1.0
+
+    def draw_background(self):
+        # Draw scrolling grid
+        t = time.time() - self.start_time
+        scroll_y = (t * 20) % 40
+        scroll_x = (t * 10) % 40
+        
+        self.screen.fill(self.bg_color)
+        
+        # Draw grid lines
+        grid_color = (20, 20, 40)
+        for x in range(0, self.screen.get_width(), 40):
+            pygame.draw.line(self.screen, grid_color, (x, 0), (x, self.screen.get_height()))
+        for y in range(0, self.screen.get_height(), 40):
+            draw_y = y + scroll_y
+            if draw_y < self.screen.get_height():
+                pygame.draw.line(self.screen, grid_color, (0, draw_y), (self.screen.get_width(), draw_y))
 
     def draw_block(self, x, y, size, color):
         rect = pygame.Rect(x, y, size, size)
-        pygame.draw.rect(self.screen, color, rect)
         
-        # Bevel Effect
-        highlight = (min(color[0] + 50, 255), min(color[1] + 50, 255), min(color[2] + 50, 255))
-        shadow = (max(color[0] - 50, 0), max(color[1] - 50, 0), max(color[2] - 50, 0))
-        border_width = 3
+        # 1. Main Block (slightly smaller for gap)
+        block_rect = rect.inflate(-2, -2)
+        pygame.draw.rect(self.screen, color, block_rect, border_radius=5)
         
-        pygame.draw.polygon(self.screen, highlight, [(x, y), (x + size, y), (x + size - border_width, y + border_width), (x + border_width, y + border_width)])
-        pygame.draw.polygon(self.screen, highlight, [(x, y), (x + border_width, y + border_width), (x + border_width, y + size - border_width), (x, y + size)])
-        pygame.draw.polygon(self.screen, shadow, [(x, y + size), (x + size, y + size), (x + size - border_width, y + size - border_width), (x + border_width, y + size - border_width)])
-        pygame.draw.polygon(self.screen, shadow, [(x + size, y), (x + size, y + size), (x + size - border_width, y + size - border_width), (x + size - border_width, y + border_width)])
+        # 2. Inner Highlight (Top-Left)
+        highlight_color = (min(color[0] + 100, 255), min(color[1] + 100, 255), min(color[2] + 100, 255))
+        highlight_rect = pygame.Rect(x + 4, y + 4, size//2, size//2)
+        # Draw a curve or just a rect? Let's do a simple rect for the "shine"
+        # pygame.draw.rect(self.screen, highlight_color, highlight_rect, border_radius=3)
+        
+        # Better shine: L shape
+        pygame.draw.line(self.screen, highlight_color, (x + 5, y + 5), (x + 5, y + size - 8), 2)
+        pygame.draw.line(self.screen, highlight_color, (x + 5, y + 5), (x + size - 8, y + 5), 2)
+
+        # 3. Dark Border (Bottom-Right)
+        shadow_color = (max(color[0] - 50, 0), max(color[1] - 50, 0), max(color[2] - 50, 0))
+        # pygame.draw.line(self.screen, shadow_color, (x + size - 5, y + 5), (x + size - 5, y + size - 5), 2)
+        # pygame.draw.line(self.screen, shadow_color, (x + 5, y + size - 5), (x + size - 5, y + size - 5), 2)
 
     def draw_grid(self, grid, offset_x, offset_y, row_offsets=None, flash_lines=None):
-        # Draw Border
+        # Draw Border with Glow
         border_rect = pygame.Rect(offset_x - 5, offset_y - 5, grid.width * grid.cell_size + 10, grid.height * grid.cell_size + 10)
-        pygame.draw.rect(self.screen, self.border_color, border_rect, 2)
+        
+        # Pulse effect for border
+        pulse = self.get_pulse(3.0)
+        glow_color = (
+            int(self.border_color[0] * (0.5 + 0.5 * pulse)),
+            int(self.border_color[1] * (0.5 + 0.5 * pulse)),
+            int(self.border_color[2] * (0.5 + 0.5 * pulse))
+        )
+        pygame.draw.rect(self.screen, glow_color, border_rect, 2, border_radius=8)
         
         # Draw grid background
         pygame.draw.rect(self.screen, self.grid_bg_color, 
-                         (offset_x, offset_y, grid.width * grid.cell_size, grid.height * grid.cell_size))
+                         (offset_x, offset_y, grid.width * grid.cell_size, grid.height * grid.cell_size),
+                         border_radius=4)
         
         # Clip to grid area
         clip_rect = pygame.Rect(offset_x, offset_y, grid.width * grid.cell_size, grid.height * grid.cell_size)
@@ -55,7 +98,7 @@ class UI:
         # Draw Flash Effect
         if flash_lines:
             s = pygame.Surface((grid.width * grid.cell_size, grid.cell_size))
-            s.set_alpha(150)
+            s.set_alpha(150 + int(50 * pulse))
             s.fill((255, 255, 255))
             for line in flash_lines:
                 self.screen.blit(s, (offset_x, offset_y + line * grid.cell_size))
@@ -70,7 +113,6 @@ class UI:
             self.draw_block(offset_x + (pentomino.x + x) * cell_size, 
                             offset_y + (pentomino.y + y) * cell_size, 
                             cell_size, pentomino.color)
-        
         self.screen.set_clip(None)
 
     def draw_ghost_pentomino(self, pentomino, offset_x, offset_y, cell_size):
@@ -81,7 +123,8 @@ class UI:
             px = offset_x + (pentomino.x + x) * cell_size
             py = offset_y + (pentomino.y + y) * cell_size
             rect = pygame.Rect(px, py, cell_size, cell_size)
-            pygame.draw.rect(self.screen, pentomino.color, rect, 2)
+            # Outline only for ghost
+            pygame.draw.rect(self.screen, pentomino.color, rect.inflate(-2, -2), 2, border_radius=5)
             
         self.screen.set_clip(None)
             
@@ -89,7 +132,7 @@ class UI:
         # Draw Border Box
         box_size = 7 * cell_size
         border_rect = pygame.Rect(x, y, box_size, box_size)
-        pygame.draw.rect(self.screen, self.border_color, border_rect, 2)
+        pygame.draw.rect(self.screen, self.border_color, border_rect, 2, border_radius=8)
         
         # Label
         label = self.font.render("NEXT", True, self.text_color)
@@ -109,7 +152,7 @@ class UI:
         width = 210
         height = 150
         border_rect = pygame.Rect(x, y, width, height)
-        pygame.draw.rect(self.screen, self.border_color, border_rect, 2)
+        pygame.draw.rect(self.screen, self.border_color, border_rect, 2, border_radius=8)
         
         # Text
         score_lbl = self.font.render("SCORE", True, self.border_color)
@@ -158,7 +201,12 @@ class UI:
         overlay.fill((0, 0, 0))
         self.screen.blit(overlay, (0, 0))
         
-        text = self.large_font.render("GAME OVER", True, (255, 50, 50))
+        # Pulsing Game Over text
+        pulse = self.get_pulse(5.0)
+        color_val = 150 + int(105 * pulse)
+        text_color = (color_val, 50, 50)
+        
+        text = self.large_font.render("GAME OVER", True, text_color)
         rect = text.get_rect(center=(screen_width // 2, screen_height // 2))
         self.screen.blit(text, rect)
         
@@ -180,23 +228,40 @@ class UI:
         resume_rect = resume_text.get_rect(center=(screen_width // 2, screen_height // 2 + 60))
         self.screen.blit(resume_text, resume_rect)
 
-    def draw_checkbox(self, x, y, checked, label):
+    def draw_checkbox(self, x, y, checked, label, mouse_pos=None):
         # Box
         rect = pygame.Rect(x, y, 20, 20)
-        pygame.draw.rect(self.screen, self.text_color, rect, 2)
+        
+        # Hover effect
+        color = self.text_color
+        if mouse_pos and rect.collidepoint(mouse_pos):
+            color = self.accent_color
+            
+        pygame.draw.rect(self.screen, color, rect, 2, border_radius=4)
         if checked:
-            pygame.draw.rect(self.screen, self.text_color, (x + 4, y + 4, 12, 12))
+            pygame.draw.rect(self.screen, color, (x + 4, y + 4, 12, 12), border_radius=2)
             
         # Label
-        text = self.font.render(label, True, self.text_color)
+        text = self.font.render(label, True, color)
         self.screen.blit(text, (x + 30, y))
         
         return rect
 
-    def draw_button(self, x, y, width, height, label, active):
+    def draw_button(self, x, y, width, height, label, active, mouse_pos=None):
         rect = pygame.Rect(x, y, width, height)
+        
         color = self.text_color if active else (100, 100, 100)
-        pygame.draw.rect(self.screen, color, rect, 2)
+        
+        # Hover effect
+        if active and mouse_pos and rect.collidepoint(mouse_pos):
+            color = self.accent_color
+            # Fill slightly
+            s = pygame.Surface((width, height))
+            s.set_alpha(50)
+            s.fill(color)
+            self.screen.blit(s, (x, y))
+            
+        pygame.draw.rect(self.screen, color, rect, 2, border_radius=10)
         
         text = self.font.render(label, True, color)
         text_rect = text.get_rect(center=rect.center)
@@ -204,18 +269,28 @@ class UI:
         
         return rect
 
-    def draw_slider(self, x, y, width, value, label):
+    def draw_slider(self, x, y, width, value, label, mouse_pos=None):
         # Label
         text = self.font.render(label, True, self.text_color)
         self.screen.blit(text, (x, y - 25))
         
         # Bar
         bar_rect = pygame.Rect(x, y, width, 10)
-        pygame.draw.rect(self.screen, (100, 100, 100), bar_rect)
+        pygame.draw.rect(self.screen, (50, 50, 50), bar_rect, border_radius=5)
+        
+        # Active part of bar
+        active_width = int(value * width)
+        active_rect = pygame.Rect(x, y, active_width, 10)
+        pygame.draw.rect(self.screen, self.border_color, active_rect, border_radius=5)
         
         # Handle
-        handle_x = x + int(value * width)
-        handle_rect = pygame.Rect(handle_x - 5, y - 5, 10, 20)
-        pygame.draw.rect(self.screen, self.text_color, handle_rect)
+        handle_x = x + active_width
+        handle_rect = pygame.Rect(handle_x - 8, y - 8, 16, 26)
+        
+        color = self.text_color
+        if mouse_pos and handle_rect.collidepoint(mouse_pos):
+            color = self.accent_color
+            
+        pygame.draw.rect(self.screen, color, handle_rect, border_radius=4)
         
         return bar_rect
