@@ -7,7 +7,7 @@ from audio import AudioPlayer
 
 class Game:
     def __init__(self):
-        self.screen_width = 800
+        self.screen_width = 820
         self.screen_height = 800
         self.grid_width = 12 
         self.grid_height = 24 
@@ -354,9 +354,9 @@ class Game:
                 
                 self.ui.draw_pentomino(self.current_piece, offset_x, offset_y, self.cell_size)
             
-            self.ui.draw_preview(self.next_piece, 585, offset_y - 5, self.cell_size)
-            self.ui.draw_score(self.score, self.level, self.lines_cleared_total, 5, offset_y - 5)
-            self.ui.draw_instructions(585, offset_y + 240)
+            self.ui.draw_preview(self.next_piece, 600, offset_y - 5, self.cell_size)
+            self.ui.draw_score(self.score, self.level, self.lines_cleared_total, 10, offset_y - 5)
+            self.ui.draw_instructions(600, offset_y + 240)
             
             if self.state == "GAMEOVER":
                 self.ui.draw_game_over(self.screen_width, self.screen_height)
