@@ -59,8 +59,9 @@ class Game:
     def spawn_piece(self):
         p = Pentomino(self.grid_width // 2, 0, self.allowed_shapes)
         # Adjust y to ensure the shape starts just above the board
-        min_y = min(y for x, y in p.shape)
-        p.y = -min_y - 2
+        # We want the lowest block (max_y) to be at y = -1
+        max_y = max(y for x, y in p.shape)
+        p.y = -max_y - 1
         return p
 
     def reset(self):
@@ -335,19 +336,24 @@ class Game:
                     if self.input_manager.is_down_held():
                         self.score += 1
                 else:
+
                     self.grid.lock_shape(self.current_piece)
                     
-                    if self.check_and_clear_lines():
-                        pass # State changed to ANIMATING_CLEAR
-                    else:
-                        self.current_piece = self.next_piece
-                        self.next_piece = self.spawn_piece()
-                        # Revert spawn adjustment: check collision immediately?
-                        # If we spawn at y=-2, we might not collide yet.
-                        # But if we can't move down, it's game over.
-                        if self.grid.check_collision(self.current_piece):
-                             self.state = "GAMEOVER"
-                             self.audio.stop()
+                    # Check for Game Over (Locked piece extends above grid)
+                    game_over = False
+                    for x, y in self.current_piece.shape:
+                        if self.current_piece.y + y < 0:
+                            self.state = "GAMEOVER"
+                            self.audio.stop()
+                            game_over = True
+                            break
+                    
+                    if not game_over:
+                        if self.check_and_clear_lines():
+                            pass # State changed to ANIMATING_CLEAR
+                        else:
+                            self.current_piece = self.next_piece
+                            self.next_piece = self.spawn_piece()
                 
                 self.fall_time = current_time
                 
