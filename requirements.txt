@@ -1,0 +1,5 @@
+pygame
+mido
+torch
+torchvision
+torchaudio
