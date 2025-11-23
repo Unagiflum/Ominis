@@ -379,6 +379,7 @@ class Game:
                 self.next_piece = self.spawn_piece()
                 if self.grid.check_collision(self.current_piece):
                     self.state = "GAMEOVER"
+                    self.audio.stop()
 
     def draw(self):
         self.ui.draw_background()

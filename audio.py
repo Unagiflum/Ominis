@@ -54,9 +54,11 @@ class MidiThread(threading.Thread):
                         self.midi_out.write_short(b[0], b[1])
                         
             # Do NOT close midi_out here, it's shared
+            self.all_notes_off()
             
         except Exception as e:
             print(f"Error in MIDI thread: {e}")
+            self.all_notes_off()
 
     def set_speed(self, speed):
         self.speed_factor = max(0.1, speed)
