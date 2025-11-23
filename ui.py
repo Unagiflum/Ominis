@@ -179,21 +179,44 @@ class UI:
         self.screen.blit(lines_lbl, (x + padding, current_y))
         self.screen.blit(lines_val, (x + width - lines_val.get_width() - padding, current_y))
 
-    def draw_instructions(self, x, y):
-        instructions = [
-            "CONTROLS:",
-            "Arrows: Move",
-            "Space: Hard Drop",
-            ", / . : Rotate",
-            "F1: Pause",
-            "ESC: Menu"
-        ]
+    def draw_instructions(self, x, y, mode="PLAYING"):
+        if mode == "WATCH_AI":
+            instructions = [
+                "AI PLAYING MODE",
+                ""
+            ]
+        else:
+            instructions = [
+                "CONTROLS:",
+                "Arrows: Move",
+                "Space: Hard Drop",
+                ", / . : Rotate",
+                "F1: Pause"
+            ]
         
         current_y = y
         for line in instructions:
-            text = self.font.render(line, True, (150, 150, 150))
+            color = (150, 150, 150)
+            if line == "AI PLAYING MODE":
+                color = self.accent_color
+            
+            text = self.font.render(line, True, color)
             self.screen.blit(text, (x, current_y))
             current_y += 25
+
+    def draw_train_menu(self, screen_width, screen_height, mouse_pos):
+        self.draw_background()
+        
+        # Title
+        title = self.large_font.render("TRAIN AI", True, self.text_color)
+        self.screen.blit(title, (screen_width // 2 - title.get_width() // 2, 100))
+        
+        # Instructions
+        inst = self.font.render("AI Training Mode (Headless)", True, (150, 150, 150))
+        self.screen.blit(inst, (screen_width // 2 - inst.get_width() // 2, 200))
+        
+        # Back Button
+        return self.draw_button(screen_width // 2 - 100, 500, 200, 50, "BACK", True, mouse_pos)
 
     def draw_game_over(self, screen_width, screen_height):
         overlay = pygame.Surface((screen_width, screen_height))

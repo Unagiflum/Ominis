@@ -48,6 +48,10 @@ class Game:
         self.chk_tet_rect = None
         self.chk_omi_rect = None
         self.btn_start_rect = None
+        self.btn_train_rect = None
+        self.btn_watch_rect = None
+        self.btn_back_rect = None
+        self.btn_quit_rect = None
         self.slider_rect = None
         self.dragging_slider = False
 
@@ -142,7 +146,7 @@ class Game:
             action = self.input_manager.get_action(event)
             
             if action == "EXIT":
-                if self.state == "PLAYING" or self.state == "GAMEOVER":
+                if self.state == "PLAYING" or self.state == "GAMEOVER" or self.state == "WATCH_AI" or self.state == "TRAIN_MENU":
                     self.state = "MENU"
                     self.audio.stop()
             
@@ -159,8 +163,27 @@ class Game:
                         elif self.btn_start_rect and self.btn_start_rect.collidepoint(mouse_pos):
                             if self.include_pentominoes or self.include_tetrominoes or self.include_ominis:
                                 self.reset()
+                        elif self.btn_train_rect and self.btn_train_rect.collidepoint(mouse_pos):
+                            self.state = "TRAIN_MENU"
+                        elif self.btn_watch_rect and self.btn_watch_rect.collidepoint(mouse_pos):
+                            if self.include_pentominoes or self.include_tetrominoes or self.include_ominis:
+                                self.reset()
+                                self.state = "WATCH_AI"
+
+            elif self.state == "TRAIN_MENU":
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        if self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
+                            self.state = "MENU"
+
+            elif self.state == "WATCH_AI":
+                 if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        if self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
+                            self.state = "MENU"
+                            self.audio.stop()
                                 
-            if self.state == "PLAYING" or self.state == "PAUSED" or self.state == "GAMEOVER":
+            if self.state == "PLAYING" or self.state == "PAUSED" or self.state == "GAMEOVER" or self.state == "WATCH_AI":
                  if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if self.slider_rect and self.slider_rect.collidepoint(event.pos):
@@ -172,6 +195,12 @@ class Game:
                  elif event.type == pygame.MOUSEMOTION:
                     if self.dragging_slider:
                         self.update_volume(event.pos[0])
+                        
+                 if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        if self.btn_quit_rect and self.btn_quit_rect.collidepoint(event.pos):
+                            self.state = "MENU"
+                            self.audio.stop()
 
             if self.state == "GAMEOVER":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
@@ -324,16 +353,16 @@ class Game:
         ratio = (1000 / max(50, self.fall_speed)) ** 0.25
         self.audio.set_speed(ratio)
 
-        if self.state == "PLAYING":
+        if self.state == "PLAYING" or self.state == "WATCH_AI":
             # Determine fall speed
             current_fall_speed = self.fall_speed
-            if self.input_manager.is_down_held():
+            if self.state == "PLAYING" and self.input_manager.is_down_held():
                 current_fall_speed = 80 # Slower fast drop (was 50)
             
             if current_time - self.fall_time > current_fall_speed:
                 if not self.grid.check_collision(self.current_piece, offset_y=1):
                     self.current_piece.y += 1
-                    if self.input_manager.is_down_held():
+                    if self.state == "PLAYING" and self.input_manager.is_down_held():
                         self.score += 1
                 else:
 
@@ -380,7 +409,7 @@ class Game:
                     all_done = False
             
             if all_done:
-                self.state = "PLAYING"
+                self.state = "PLAYING" if self.state != "WATCH_AI" else "WATCH_AI" # Maintain state
                 self.current_piece = self.next_piece
                 self.next_piece = self.spawn_piece()
                 if self.grid.check_collision(self.current_piece):
@@ -395,8 +424,15 @@ class Game:
             title = self.ui.large_font.render("OMINIS", True, self.ui.text_color)
             self.screen.blit(title, (self.screen_width // 2 - title.get_width() // 2, 100))
             
-            # Checkboxes
-            start_y = 250
+            # Checkboxes Group
+            group_rect = pygame.Rect(280, 240, 260, 160)
+            pygame.draw.rect(self.screen, self.ui.border_color, group_rect, 2, border_radius=10)
+            
+            # Instructions (Select Group) - Inside border
+            inst = self.ui.font.render("Select Groups:", True, self.ui.text_color)
+            self.screen.blit(inst, (group_rect.centerx - inst.get_width() // 2, 250))
+            
+            start_y = 280
             self.chk_pent_rect = self.ui.draw_checkbox(300, start_y, self.include_pentominoes, "Pentominoes (5)", mouse_pos)
             self.chk_tet_rect = self.ui.draw_checkbox(300, start_y + 40, self.include_tetrominoes, "Tetrominoes (4)", mouse_pos)
             self.chk_omi_rect = self.ui.draw_checkbox(300, start_y + 80, self.include_ominis, "Twos and Threes", mouse_pos)
@@ -405,9 +441,12 @@ class Game:
             active = self.include_pentominoes or self.include_tetrominoes or self.include_ominis
             self.btn_start_rect = self.ui.draw_button(self.screen_width // 2 - 100, 450, 200, 50, "START GAME", active, mouse_pos)
             
-            # Instructions
-            inst = self.ui.font.render("Select at least one group", True, (150, 150, 150))
-            self.screen.blit(inst, (self.screen_width // 2 - inst.get_width() // 2, 520))
+            # AI Buttons
+            self.btn_watch_rect = self.ui.draw_button(self.screen_width // 2 - 100, 520, 200, 50, "WATCH AI PLAY", active, mouse_pos)
+            self.btn_train_rect = self.ui.draw_button(self.screen_width // 2 - 100, 590, 200, 50, "TRAIN AI", True, mouse_pos)
+            
+        elif self.state == "TRAIN_MENU":
+            self.btn_back_rect = self.ui.draw_train_menu(self.screen_width, self.screen_height, mouse_pos)
             
         else:
             offset_x = (self.screen_width - self.grid_width * self.cell_size) // 2
@@ -419,7 +458,7 @@ class Game:
             
             self.ui.draw_grid(self.grid, offset_x, offset_y, offsets, flash)
             
-            if self.state == "PLAYING":
+            if self.state == "PLAYING" or self.state == "WATCH_AI":
                 # Draw Ghost Piece
                 ghost = self.get_ghost_piece()
                 if ghost and ghost.y != self.current_piece.y:
@@ -429,7 +468,15 @@ class Game:
             
             self.ui.draw_preview(self.next_piece, 600, offset_y - 5, self.cell_size)
             self.ui.draw_score(self.score, self.level, self.lines_cleared_total, 10, offset_y - 5)
-            self.ui.draw_instructions(600, offset_y + 240)
+            self.ui.draw_instructions(600, offset_y + 240, mode=self.state)
+            
+            # Back Button for Watch AI (Moved down to avoid overlap)
+            if self.state == "WATCH_AI":
+                self.btn_back_rect = self.ui.draw_button(600, offset_y + 520, 150, 40, "BACK", True, mouse_pos)
+            
+            # Quit Button for Playing
+            if self.state == "PLAYING":
+                self.btn_quit_rect = self.ui.draw_button(600, offset_y + 520, 150, 40, "QUIT GAME", True, mouse_pos)
             
             # Volume Slider
             self.slider_rect = self.ui.draw_slider(600, offset_y + 450, 150, self.volume, "Volume", mouse_pos)
