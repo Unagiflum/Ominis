@@ -176,7 +176,7 @@ class Game:
                         if self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
                             self.state = "MENU"
 
-            elif self.state == "WATCH_AI":
+            elif self.state == "WATCH_AI" or (self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI") or (self.state == "GAMEOVER" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI"):
                  if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
@@ -474,8 +474,13 @@ class Game:
             # Play: 4 lines -> 100 + 40 = 140
             # Watch: 2 lines -> 50 + 40 = 90
             # Add extra padding to be safe against overlap
-            inst_height = 180 if self.state != "WATCH_AI" else 130
-            self.ui.draw_instructions(left_pane_x, current_y, mode=self.state)
+            # Determine mode for instructions - check if we came from WATCH_AI when paused
+            instruction_mode = self.state
+            if self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI":
+                instruction_mode = "WATCH_AI"
+            
+            inst_height = 180 if instruction_mode != "WATCH_AI" else 130
+            self.ui.draw_instructions(left_pane_x, current_y, mode=instruction_mode)
             current_y += inst_height + padding
             
             # Volume Slider (Height ~40)
