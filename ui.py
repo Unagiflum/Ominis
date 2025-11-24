@@ -253,7 +253,7 @@ class UI:
                 
             current_y += line_height
 
-    def draw_train_menu(self, screen_width, screen_height, mouse_pos):
+    def draw_train_menu(self, screen_width, screen_height, visual_mode, mouse_pos):
         self.draw_background()
         
         # Title
@@ -264,8 +264,16 @@ class UI:
         inst = self.font.render("AI Training Mode (Headless)", True, (150, 150, 150))
         self.screen.blit(inst, (screen_width // 2 - inst.get_width() // 2, 200))
         
+        # Visual Mode Checkbox
+        chk_rect = self.draw_checkbox(screen_width // 2 - 100, 300, visual_mode, "Visual Mode", mouse_pos)
+        
+        # Start Button
+        start_rect = self.draw_button(screen_width // 2 - 100, 400, 200, 50, "START", True, mouse_pos)
+        
         # Back Button
-        return self.draw_button(screen_width // 2 - 100, 500, 200, 50, "BACK", True, mouse_pos)
+        btn_rect = self.draw_button(screen_width // 2 - 100, 500, 200, 50, "BACK", True, mouse_pos)
+        
+        return btn_rect, chk_rect, start_rect
 
     def draw_game_over(self, x, y, width, height):
         overlay = pygame.Surface((width, height))

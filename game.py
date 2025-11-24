@@ -49,8 +49,13 @@ class Game:
         self.chk_omi_rect = None
         self.btn_start_rect = None
         self.btn_train_rect = None
+        self.btn_start_rect = None
+        self.btn_train_rect = None
         self.btn_watch_rect = None
         self.btn_back_rect = None
+        self.train_chk_rect = None
+        self.btn_train_start_rect = None
+        self.train_visual_mode = True
         self.btn_quit_rect = None
         self.slider_rect = None
         self.dragging_slider = False
@@ -146,7 +151,7 @@ class Game:
             action = self.input_manager.get_action(event)
             
             if action == "EXIT":
-                if self.state == "PLAYING" or self.state == "GAMEOVER" or self.state == "WATCH_AI" or self.state == "TRAIN_MENU":
+                if self.state == "PLAYING" or self.state == "GAMEOVER" or self.state == "WATCH_AI" or self.state == "TRAIN_MENU" or self.state == "TRAINING":
                     self.state = "MENU"
                     self.audio.stop()
             
@@ -175,6 +180,11 @@ class Game:
                     if event.button == 1:
                         if self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
                             self.state = "MENU"
+                        elif self.train_chk_rect and self.train_chk_rect.collidepoint(event.pos):
+                            self.train_visual_mode = not self.train_visual_mode
+                        elif self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
+                            self.reset()
+                            self.state = "TRAINING"
 
             elif self.state == "WATCH_AI" or (self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI") or (self.state == "GAMEOVER" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI"):
                  if event.type == pygame.MOUSEBUTTONDOWN:
@@ -183,15 +193,16 @@ class Game:
                             self.state = "MENU"
                             self.audio.stop()
 
-            if self.state == "PLAYING" or self.state == "PAUSED" or self.state == "GAMEOVER":
+            if self.state == "PLAYING" or self.state == "PAUSED" or self.state == "GAMEOVER" or self.state == "TRAINING":
                  if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if self.btn_quit_rect and self.btn_quit_rect.collidepoint(event.pos):
                             self.state = "MENU"
-                            self.state = "MENU"
                             self.audio.stop()
+                        elif self.state == "TRAINING" and self.train_chk_rect and self.train_chk_rect.collidepoint(event.pos):
+                            self.train_visual_mode = not self.train_visual_mode
 
-            if self.state == "PLAYING" or self.state == "PAUSED" or self.state == "WATCH_AI" or self.state == "GAMEOVER":
+            if self.state == "PLAYING" or self.state == "PAUSED" or self.state == "WATCH_AI" or self.state == "GAMEOVER" or self.state == "TRAINING":
                  if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if self.slider_rect and self.slider_rect.collidepoint(event.pos):
@@ -276,6 +287,7 @@ class Game:
         
         if lines_to_clear:
             self.clearing_lines = lines_to_clear
+            self.pre_anim_state = self.state # Save state to return to
             self.state = "ANIMATING_CLEAR"
             self.animation_timer = pygame.time.get_ticks()
             self.audio.play_clear()
@@ -341,6 +353,97 @@ class Game:
             else:
                 self.row_offsets[new_y] = (old_y - new_y) * self.cell_size
 
+    def game_tick(self):
+        """Advances the game by one 'tick' (one step of gravity)."""
+        if not self.grid.check_collision(self.current_piece, offset_y=1):
+            self.current_piece.y += 1
+            if self.state == "PLAYING" and self.input_manager.is_down_held():
+                self.score += 1
+        else:
+            self.grid.lock_shape(self.current_piece)
+            
+            # Check for Game Over (Locked piece extends above grid)
+            game_over = False
+            for x, y in self.current_piece.shape:
+                if self.current_piece.y + y < 0:
+                    self.state = "GAMEOVER"
+                    self.audio.stop()
+                    game_over = True
+                    break
+            
+            if not game_over:
+                if self.check_and_clear_lines():
+                    pass # State changed to ANIMATING_CLEAR
+                else:
+                    self.current_piece = self.next_piece
+                    self.next_piece = self.spawn_piece()
+                    if self.grid.check_collision(self.current_piece):
+                        self.state = "GAMEOVER"
+                        self.audio.stop()
+
+    def step_ai(self, moves):
+        """
+        Executes moves based on budget: 3 Lateral, 3 Vertical, 3 Rotation.
+        Then advances the game by one tick.
+        moves: List of strings, e.g., ["LEFT", "ROTATE_CW", "DOWN"]
+        """
+        if self.state != "PLAYING" and self.state != "TRAINING":
+             return
+
+        # Move Budgets
+        budget = {
+            "LATERAL": 3,
+            "VERTICAL": 3,
+            "ROTATION": 3
+        }
+
+        for move in moves:
+            if move == "LEFT":
+                if budget["LATERAL"] > 0:
+                    if not self.grid.check_collision(self.current_piece, offset_x=-1):
+                        self.current_piece.x -= 1
+                    budget["LATERAL"] -= 1
+            elif move == "RIGHT":
+                if budget["LATERAL"] > 0:
+                    if not self.grid.check_collision(self.current_piece, offset_x=1):
+                        self.current_piece.x += 1
+                    budget["LATERAL"] -= 1
+            elif move == "DOWN":
+                if budget["VERTICAL"] > 0:
+                    if not self.grid.check_collision(self.current_piece, offset_y=1):
+                        self.current_piece.y += 1
+                        self.score += 1
+                    budget["VERTICAL"] -= 1
+            elif move == "ROTATE_CW":
+                if budget["ROTATION"] > 0:
+                    self.current_piece.rotate_right()
+                    if self.grid.check_collision(self.current_piece):
+                        self.current_piece.rotate_left()
+                    budget["ROTATION"] -= 1
+            elif move == "ROTATE_CCW":
+                if budget["ROTATION"] > 0:
+                    self.current_piece.rotate_left()
+                    if self.grid.check_collision(self.current_piece):
+                        self.current_piece.rotate_right()
+                    budget["ROTATION"] -= 1
+            elif move == "HARD_DROP":
+                 # Hard drop consumes all vertical budget? Or just happens?
+                 # User said "3 down presses". Hard drop is usually separate.
+                 # Let's allow it if we have vertical budget, and it consumes 1?
+                 # Or maybe it's a "free" action that ends the move phase?
+                 # For safety, let's count it as 1 Vertical.
+                 if budget["VERTICAL"] > 0:
+                     while not self.grid.check_collision(self.current_piece, offset_y=1):
+                        self.current_piece.y += 1
+                        self.score += 2
+                     budget["VERTICAL"] -= 1
+                     # Hard drop usually forces a lock immediately.
+                     # But here we just end the move phase and let game_tick lock it.
+                     break # Stop processing further moves after hard drop
+
+        # Advance game state
+        self.game_tick()
+
     def update(self):
         current_time = pygame.time.get_ticks()
         
@@ -350,8 +453,6 @@ class Game:
         self.audio.update()
         
         # Update music speed based on fall speed
-        # Base speed is 1000ms. As fall_speed decreases, ratio increases.
-        # Use 4th root as requested: (1000 / current) ^ 0.25
         ratio = (1000 / max(50, self.fall_speed)) ** 0.25
         self.audio.set_speed(ratio)
 
@@ -362,31 +463,20 @@ class Game:
                 current_fall_speed = 80 # Slower fast drop (was 50)
             
             if current_time - self.fall_time > current_fall_speed:
-                if not self.grid.check_collision(self.current_piece, offset_y=1):
-                    self.current_piece.y += 1
-                    if self.state == "PLAYING" and self.input_manager.is_down_held():
-                        self.score += 1
-                else:
-
-                    self.grid.lock_shape(self.current_piece)
-                    
-                    # Check for Game Over (Locked piece extends above grid)
-                    game_over = False
-                    for x, y in self.current_piece.shape:
-                        if self.current_piece.y + y < 0:
-                            self.state = "GAMEOVER"
-                            self.audio.stop()
-                            game_over = True
-                            break
-                    
-                    if not game_over:
-                        if self.check_and_clear_lines():
-                            pass # State changed to ANIMATING_CLEAR
-                        else:
-                            self.current_piece = self.next_piece
-                            self.next_piece = self.spawn_piece()
-                
+                self.game_tick()
                 self.fall_time = current_time
+
+        elif self.state == "TRAINING":
+            if self.train_visual_mode:
+                # Visual Mode: Sync with fall speed
+                if current_time - self.fall_time > self.fall_speed:
+                    self.step_ai([]) # Pass dummy moves for now
+                    self.fall_time = current_time
+            else:
+                # Headless Mode: Run as fast as possible (called every frame)
+                # We might want to run multiple steps per frame if possible, 
+                # but for now one step per frame (uncapped FPS) is good.
+                self.step_ai([]) # Pass dummy moves for now
                 
         elif self.state == "ANIMATING_CLEAR":
             if current_time - self.animation_timer > 200: # 200ms flash
@@ -411,7 +501,13 @@ class Game:
                     all_done = False
             
             if all_done:
-                self.state = "PLAYING" if self.state != "WATCH_AI" else "WATCH_AI" # Maintain state
+                # Restore state
+                if self.state == "ANIMATING_DROP": # Double check
+                     if hasattr(self, 'pre_anim_state'):
+                         self.state = self.pre_anim_state
+                     else:
+                         self.state = "PLAYING" if self.state != "WATCH_AI" else "WATCH_AI"
+                
                 self.current_piece = self.next_piece
                 self.next_piece = self.spawn_piece()
                 if self.grid.check_collision(self.current_piece):
@@ -455,7 +551,7 @@ class Game:
             self.btn_train_rect = self.ui.draw_button(self.screen_width // 2 - 100, 590, 200, 50, "TRAIN AI", True, mouse_pos)
             
         elif self.state == "TRAIN_MENU":
-            self.btn_back_rect = self.ui.draw_train_menu(self.screen_width, self.screen_height, mouse_pos)
+            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_visual_mode, mouse_pos)
             
         else:
             # Standard Padding
@@ -521,9 +617,13 @@ class Game:
                 self.btn_back_rect = self.ui.draw_button(left_pane_x + 30, btn_y, 150, 40, "BACK", True, mouse_pos)
             
             # Quit Button for Playing
-            # Show if PLAYING or (PAUSED and NOT from WATCH_AI) or (GAMEOVER and NOT from WATCH_AI)
-            elif self.state == "PLAYING" or (self.state == "PAUSED" and (not hasattr(self, 'last_state') or self.last_state != "WATCH_AI")) or (self.state == "GAMEOVER" and (not hasattr(self, 'last_state') or self.last_state != "WATCH_AI")):
+            # Show if PLAYING or (PAUSED and NOT from WATCH_AI) or (GAMEOVER and NOT from WATCH_AI) or TRAINING
+            elif self.state == "PLAYING" or (self.state == "PAUSED" and (not hasattr(self, 'last_state') or self.last_state != "WATCH_AI")) or (self.state == "GAMEOVER" and (not hasattr(self, 'last_state') or self.last_state != "WATCH_AI")) or self.state == "TRAINING":
                 self.btn_quit_rect = self.ui.draw_button(left_pane_x + 30, btn_y, 150, 40, "QUIT GAME", True, mouse_pos)
+                
+                if self.state == "TRAINING":
+                     # Draw Checkbox above Quit button
+                     self.train_chk_rect = self.ui.draw_checkbox(left_pane_x + 30, btn_y - 40, self.train_visual_mode, "Visual Mode", mouse_pos)
             
             # Calculate grid rect for overlays
             grid_rect_x = offset_x
@@ -550,11 +650,22 @@ class Game:
 
     def run(self):
         running = True
+        headless_frame_count = 0
         while running:
             running = self.handle_input()
             self.update()
-            self.draw()
-            self.clock.tick(60)
+            
+            if self.state == "TRAINING" and not self.train_visual_mode:
+                # Headless Mode
+                headless_frame_count += 1
+                if headless_frame_count % 60 == 0: # Draw every 60 frames (approx 1 sec if running at 60fps, but here it's uncapped)
+                    self.draw()
+                    pygame.display.flip() # Ensure flip happens
+                
+                self.clock.tick(0) # Uncapped FPS
+            else:
+                self.draw()
+                self.clock.tick(60)
         
         self.audio.cleanup()
         pygame.quit()
