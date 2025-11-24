@@ -8,8 +8,8 @@ from audio import AudioPlayer
 
 class Game:
     def __init__(self):
-        self.screen_width = 630
-        self.screen_height = 760
+        self.screen_width = 635
+        self.screen_height = 770
         self.grid_width = 12 
         self.grid_height = 24 
         self.cell_size = 30
@@ -474,7 +474,7 @@ class Game:
             # Play: 4 lines -> 100 + 40 = 140
             # Watch: 2 lines -> 50 + 40 = 90
             # Add extra padding to be safe against overlap
-            inst_height = 160 if self.state != "WATCH_AI" else 110
+            inst_height = 180 if self.state != "WATCH_AI" else 130
             self.ui.draw_instructions(left_pane_x, current_y, mode=self.state)
             current_y += inst_height + padding
             
