@@ -138,13 +138,26 @@ class UI:
         label = self.font.render("NEXT", True, self.text_color)
         self.screen.blit(label, (x + box_size//2 - label.get_width()//2, y + 10))
         
-        # Draw piece centered
+        # Calculate shape dimensions
+        xs = [x for x, y in pentomino.shape]
+        ys = [y for x, y in pentomino.shape]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        
+        shape_width = (max_x - min_x + 1) * cell_size
+        shape_height = (max_y - min_y + 1) * cell_size
+        
+        # Center of the box
         center_x = x + box_size // 2
-        center_y = y + box_size // 2 + 10
+        center_y = y + box_size // 2 + 10 # +10 for label offset
+        
+        # Offset to center the shape
+        start_x = center_x - shape_width // 2 - min_x * cell_size
+        start_y = center_y - shape_height // 2 - min_y * cell_size
         
         for px, py in pentomino.shape:
-            self.draw_block(center_x + px * cell_size, 
-                            center_y + py * cell_size, 
+            self.draw_block(start_x + px * cell_size, 
+                            start_y + py * cell_size, 
                             cell_size, pentomino.color)
 
     def draw_score(self, score, level, lines, x, y):
@@ -180,29 +193,53 @@ class UI:
         self.screen.blit(lines_val, (x + width - lines_val.get_width() - padding, current_y))
 
     def draw_instructions(self, x, y, mode="PLAYING"):
+        # Draw Border Box (Same width as Preview: 7 * 30 = 210)
+        box_width = 210
+        # Calculate height based on lines
+        line_height = 25
+        padding = 10
+        
         if mode == "WATCH_AI":
             instructions = [
-                "AI PLAYING MODE",
-                ""
+                ("AI PLAYING", ""),
+                ("F1", "Pause")
             ]
         else:
             instructions = [
-                "CONTROLS:",
-                "Arrows: Move",
-                "Space: Hard Drop",
-                ", / . : Rotate",
-                "F1: Pause"
+                ("Arrows", "Move"),
+                ("Space", "Hard Drop"),
+                (", / .", "Rotate"),
+                ("F1", "Pause")
             ]
-        
-        current_y = y
-        for line in instructions:
-            color = (150, 150, 150)
-            if line == "AI PLAYING MODE":
-                color = self.accent_color
             
-            text = self.font.render(line, True, color)
-            self.screen.blit(text, (x, current_y))
-            current_y += 25
+        box_height = len(instructions) * line_height + padding * 2 + 20 # +20 for title
+        
+        border_rect = pygame.Rect(x, y, box_width, box_height)
+        pygame.draw.rect(self.screen, self.border_color, border_rect, 2, border_radius=8)
+        
+        # Title
+        title = self.font.render("CONTROLS", True, self.text_color)
+        self.screen.blit(title, (x + box_width//2 - title.get_width()//2, y + padding))
+        
+        current_y = y + padding + 25
+        
+        for key, func in instructions:
+            color = (150, 150, 150)
+            if key == "AI PLAYING":
+                color = self.accent_color
+                # Center this one
+                text = self.font.render(key, True, color)
+                self.screen.blit(text, (x + box_width//2 - text.get_width()//2, current_y))
+            else:
+                # Key Left Aligned
+                key_text = self.font.render(key, True, self.border_color) # Different color for keys
+                self.screen.blit(key_text, (x + padding, current_y))
+                
+                # Function Right Aligned
+                func_text = self.font.render(func, True, color)
+                self.screen.blit(func_text, (x + box_width - func_text.get_width() - padding, current_y))
+                
+            current_y += line_height
 
     def draw_train_menu(self, screen_width, screen_height, mouse_pos):
         self.draw_background()
@@ -232,10 +269,6 @@ class UI:
         text = self.large_font.render("GAME OVER", True, text_color)
         rect = text.get_rect(center=(screen_width // 2, screen_height // 2))
         self.screen.blit(text, rect)
-        
-        restart_text = self.font.render("Press ENTER to Restart", True, self.text_color)
-        restart_rect = restart_text.get_rect(center=(screen_width // 2, screen_height // 2 + 60))
-        self.screen.blit(restart_text, restart_rect)
 
     def draw_pause_screen(self, screen_width, screen_height):
         overlay = pygame.Surface((screen_width, screen_height))
@@ -295,7 +328,7 @@ class UI:
     def draw_slider(self, x, y, width, value, label, mouse_pos=None):
         # Label
         text = self.font.render(label, True, self.text_color)
-        self.screen.blit(text, (x, y - 25))
+        self.screen.blit(text, (x + width//2 - text.get_width()//2, y - 25))
         
         # Bar
         bar_rect = pygame.Rect(x, y, width, 10)

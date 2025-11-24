@@ -182,8 +182,16 @@ class Game:
                         if self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
                             self.state = "MENU"
                             self.audio.stop()
-                                
-            if self.state == "PLAYING" or self.state == "PAUSED" or self.state == "GAMEOVER" or self.state == "WATCH_AI":
+
+            if self.state == "PLAYING" or self.state == "PAUSED" or self.state == "GAMEOVER":
+                 if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        if self.btn_quit_rect and self.btn_quit_rect.collidepoint(event.pos):
+                            self.state = "MENU"
+                            self.state = "MENU"
+                            self.audio.stop()
+
+            if self.state == "PLAYING" or self.state == "PAUSED" or self.state == "WATCH_AI" or self.state == "GAMEOVER":
                  if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if self.slider_rect and self.slider_rect.collidepoint(event.pos):
@@ -196,23 +204,17 @@ class Game:
                     if self.dragging_slider:
                         self.update_volume(event.pos[0])
                         
-                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1:
-                        if self.btn_quit_rect and self.btn_quit_rect.collidepoint(event.pos):
-                            self.state = "MENU"
-                            self.audio.stop()
-
             if self.state == "GAMEOVER":
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
-                    self.reset()
+                pass # No special input for now, just buttons above
             
             # Pause Toggle
             if event.type == pygame.KEYDOWN and event.key == pygame.K_F1:
-                if self.state == "PLAYING":
+                if self.state == "PLAYING" or self.state == "WATCH_AI":
+                    self.last_state = self.state # Remember state to resume to
                     self.state = "PAUSED"
                     self.audio.pause()
                 elif self.state == "PAUSED":
-                    self.state = "PLAYING"
+                    self.state = self.last_state
                     self.audio.unpause()
             
             elif self.state == "PLAYING":
@@ -458,7 +460,7 @@ class Game:
             
             self.ui.draw_grid(self.grid, offset_x, offset_y, offsets, flash)
             
-            if self.state == "PLAYING" or self.state == "WATCH_AI":
+            if self.state == "PLAYING" or self.state == "WATCH_AI" or self.state == "PAUSED":
                 # Draw Ghost Piece
                 ghost = self.get_ghost_piece()
                 if ghost and ghost.y != self.current_piece.y:
@@ -470,22 +472,24 @@ class Game:
             self.ui.draw_score(self.score, self.level, self.lines_cleared_total, 10, offset_y - 5)
             self.ui.draw_instructions(600, offset_y + 240, mode=self.state)
             
-            # Back Button for Watch AI (Moved down to avoid overlap)
-            if self.state == "WATCH_AI":
-                self.btn_back_rect = self.ui.draw_button(600, offset_y + 520, 150, 40, "BACK", True, mouse_pos)
-            
-            # Quit Button for Playing
-            if self.state == "PLAYING":
-                self.btn_quit_rect = self.ui.draw_button(600, offset_y + 520, 150, 40, "QUIT GAME", True, mouse_pos)
-            
-            # Volume Slider
-            self.slider_rect = self.ui.draw_slider(600, offset_y + 450, 150, self.volume, "Volume", mouse_pos)
-            
             if self.state == "GAMEOVER":
                 self.ui.draw_game_over(self.screen_width, self.screen_height)
                 
             if self.state == "PAUSED":
                 self.ui.draw_pause_screen(self.screen_width, self.screen_height)
+
+            # Back Button for Watch AI (Moved down to avoid overlap)
+            # Also show if PAUSED from WATCH_AI, or GAMEOVER from WATCH_AI
+            if self.state == "WATCH_AI" or (self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI") or (self.state == "GAMEOVER" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI"):
+                self.btn_back_rect = self.ui.draw_button(630, offset_y + 520, 150, 40, "BACK", True, mouse_pos)
+            
+            # Quit Button for Playing
+            # Show if PLAYING or (PAUSED and NOT from WATCH_AI) or (GAMEOVER and NOT from WATCH_AI)
+            elif self.state == "PLAYING" or (self.state == "PAUSED" and (not hasattr(self, 'last_state') or self.last_state != "WATCH_AI")) or (self.state == "GAMEOVER" and (not hasattr(self, 'last_state') or self.last_state != "WATCH_AI")):
+                self.btn_quit_rect = self.ui.draw_button(630, offset_y + 520, 150, 40, "QUIT GAME", True, mouse_pos)
+            
+            # Volume Slider
+            self.slider_rect = self.ui.draw_slider(630, offset_y + 450, 150, self.volume, "Volume", mouse_pos)
         
         pygame.display.flip()
 
