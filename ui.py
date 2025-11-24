@@ -132,6 +132,10 @@ class UI:
         # Draw Border Box
         box_size = 7 * cell_size
         border_rect = pygame.Rect(x, y, box_size, box_size)
+        
+        # Draw solid background first
+        pygame.draw.rect(self.screen, self.bg_color, border_rect, border_radius=8)
+        
         pygame.draw.rect(self.screen, self.border_color, border_rect, 2, border_radius=8)
         
         # Label
@@ -165,6 +169,10 @@ class UI:
         width = 210
         height = 150
         border_rect = pygame.Rect(x, y, width, height)
+        
+        # Draw solid background first
+        pygame.draw.rect(self.screen, self.bg_color, border_rect, border_radius=8)
+        
         pygame.draw.rect(self.screen, self.border_color, border_rect, 2, border_radius=8)
         
         # Text
@@ -215,6 +223,10 @@ class UI:
         box_height = len(instructions) * line_height + padding * 2 + 20 # +20 for title
         
         border_rect = pygame.Rect(x, y, box_width, box_height)
+        
+        # Draw solid background first
+        pygame.draw.rect(self.screen, self.bg_color, border_rect, border_radius=8)
+        
         pygame.draw.rect(self.screen, self.border_color, border_rect, 2, border_radius=8)
         
         # Title
@@ -305,6 +317,9 @@ class UI:
 
     def draw_button(self, x, y, width, height, label, active, mouse_pos=None):
         rect = pygame.Rect(x, y, width, height)
+        
+        # Draw solid background first
+        pygame.draw.rect(self.screen, self.bg_color, rect, border_radius=10)
         
         color = self.text_color if active else (100, 100, 100)
         

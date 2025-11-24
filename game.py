@@ -430,6 +430,10 @@ class Game:
             group_width = 260
             group_x = (self.screen_width - group_width) // 2
             group_rect = pygame.Rect(group_x, 240, group_width, 160)
+            
+            # Draw solid background first
+            pygame.draw.rect(self.screen, self.ui.bg_color, group_rect, border_radius=10)
+            
             pygame.draw.rect(self.screen, self.ui.border_color, group_rect, 2, border_radius=10)
             
             # Instructions (Select Group) - Inside border
