@@ -255,11 +255,11 @@ class UI:
         # Back Button
         return self.draw_button(screen_width // 2 - 100, 500, 200, 50, "BACK", True, mouse_pos)
 
-    def draw_game_over(self, screen_width, screen_height):
-        overlay = pygame.Surface((screen_width, screen_height))
+    def draw_game_over(self, x, y, width, height):
+        overlay = pygame.Surface((width, height))
         overlay.set_alpha(200)
         overlay.fill((0, 0, 0))
-        self.screen.blit(overlay, (0, 0))
+        self.screen.blit(overlay, (x, y))
         
         # Pulsing Game Over text
         pulse = self.get_pulse(5.0)
@@ -267,21 +267,21 @@ class UI:
         text_color = (color_val, 50, 50)
         
         text = self.large_font.render("GAME OVER", True, text_color)
-        rect = text.get_rect(center=(screen_width // 2, screen_height // 2))
+        rect = text.get_rect(center=(x + width // 2, y + height // 2))
         self.screen.blit(text, rect)
 
-    def draw_pause_screen(self, screen_width, screen_height):
-        overlay = pygame.Surface((screen_width, screen_height))
+    def draw_pause_screen(self, x, y, width, height):
+        overlay = pygame.Surface((width, height))
         overlay.set_alpha(150)
         overlay.fill((0, 0, 0))
-        self.screen.blit(overlay, (0, 0))
+        self.screen.blit(overlay, (x, y))
         
         text = self.large_font.render("PAUSED", True, self.text_color)
-        rect = text.get_rect(center=(screen_width // 2, screen_height // 2))
+        rect = text.get_rect(center=(x + width // 2, y + height // 2))
         self.screen.blit(text, rect)
         
         resume_text = self.font.render("Press F1 to Resume", True, self.text_color)
-        resume_rect = resume_text.get_rect(center=(screen_width // 2, screen_height // 2 + 60))
+        resume_rect = resume_text.get_rect(center=(x + width // 2, y + height // 2 + 60))
         self.screen.blit(resume_text, resume_rect)
 
     def draw_checkbox(self, x, y, checked, label, mouse_pos=None):

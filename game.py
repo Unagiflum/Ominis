@@ -8,8 +8,8 @@ from audio import AudioPlayer
 
 class Game:
     def __init__(self):
-        self.screen_width = 820
-        self.screen_height = 800
+        self.screen_width = 630
+        self.screen_height = 760
         self.grid_width = 12 
         self.grid_height = 24 
         self.cell_size = 30
@@ -427,7 +427,9 @@ class Game:
             self.screen.blit(title, (self.screen_width // 2 - title.get_width() // 2, 100))
             
             # Checkboxes Group
-            group_rect = pygame.Rect(280, 240, 260, 160)
+            group_width = 260
+            group_x = (self.screen_width - group_width) // 2
+            group_rect = pygame.Rect(group_x, 240, group_width, 160)
             pygame.draw.rect(self.screen, self.ui.border_color, group_rect, 2, border_radius=10)
             
             # Instructions (Select Group) - Inside border
@@ -435,9 +437,10 @@ class Game:
             self.screen.blit(inst, (group_rect.centerx - inst.get_width() // 2, 250))
             
             start_y = 280
-            self.chk_pent_rect = self.ui.draw_checkbox(300, start_y, self.include_pentominoes, "Pentominoes (5)", mouse_pos)
-            self.chk_tet_rect = self.ui.draw_checkbox(300, start_y + 40, self.include_tetrominoes, "Tetrominoes (4)", mouse_pos)
-            self.chk_omi_rect = self.ui.draw_checkbox(300, start_y + 80, self.include_ominis, "Twos and Threes", mouse_pos)
+            chk_x = group_x + 20 # Padding inside box
+            self.chk_pent_rect = self.ui.draw_checkbox(chk_x, start_y, self.include_pentominoes, "Pentominoes (5)", mouse_pos)
+            self.chk_tet_rect = self.ui.draw_checkbox(chk_x, start_y + 40, self.include_tetrominoes, "Tetrominoes (4)", mouse_pos)
+            self.chk_omi_rect = self.ui.draw_checkbox(chk_x, start_y + 80, self.include_ominis, "Twos and Threes", mouse_pos)
             
             # Start Button
             active = self.include_pentominoes or self.include_tetrominoes or self.include_ominis
@@ -451,8 +454,43 @@ class Game:
             self.btn_back_rect = self.ui.draw_train_menu(self.screen_width, self.screen_height, mouse_pos)
             
         else:
-            offset_x = (self.screen_width - self.grid_width * self.cell_size) // 2
-            offset_y = 50
+            # Standard Padding
+            padding = 20
+            
+            # Left Pane Layout
+            left_pane_x = padding
+            current_y = padding
+            
+            # Scoreboard (Height 150)
+            self.ui.draw_score(self.score, self.level, self.lines_cleared_total, left_pane_x, current_y)
+            current_y += 150 + padding
+            
+            # Preview (Height 210)
+            self.ui.draw_preview(self.next_piece, left_pane_x, current_y, self.cell_size)
+            current_y += 210 + padding
+            
+            # Instructions (Variable Height)
+            # Calculate height: lines * 25 + 20 + 20
+            # Play: 4 lines -> 100 + 40 = 140
+            # Watch: 2 lines -> 50 + 40 = 90
+            # Add extra padding to be safe against overlap
+            inst_height = 160 if self.state != "WATCH_AI" else 110
+            self.ui.draw_instructions(left_pane_x, current_y, mode=self.state)
+            current_y += inst_height + padding
+            
+            # Volume Slider (Height ~40)
+            # Center in 210 width: 210 - 150 = 60 -> x + 30
+            self.slider_rect = self.ui.draw_slider(left_pane_x + 30, current_y, 150, self.volume, "Volume", mouse_pos)
+            current_y += 40 + padding
+            
+            # Buttons (Height 40)
+            btn_y = current_y
+            
+            # Grid Offset
+            offset_x = left_pane_x + 210 + padding
+            # Grid border is drawn at offset_y - 5. We want border at 'padding'.
+            # So offset_y - 5 = padding => offset_y = padding + 5
+            offset_y = padding + 5
             
             # Pass offsets and flash lines if animating
             offsets = self.row_offsets if self.state == "ANIMATING_DROP" else None
@@ -460,7 +498,7 @@ class Game:
             
             self.ui.draw_grid(self.grid, offset_x, offset_y, offsets, flash)
             
-            if self.state == "PLAYING" or self.state == "WATCH_AI" or self.state == "PAUSED":
+            if self.state == "PLAYING" or self.state == "WATCH_AI" or self.state == "PAUSED" or self.state == "GAMEOVER":
                 # Draw Ghost Piece
                 ghost = self.get_ghost_piece()
                 if ghost and ghost.y != self.current_piece.y:
@@ -468,28 +506,27 @@ class Game:
                 
                 self.ui.draw_pentomino(self.current_piece, offset_x, offset_y, self.cell_size)
             
-            self.ui.draw_preview(self.next_piece, 600, offset_y - 5, self.cell_size)
-            self.ui.draw_score(self.score, self.level, self.lines_cleared_total, 10, offset_y - 5)
-            self.ui.draw_instructions(600, offset_y + 240, mode=self.state)
-            
-            if self.state == "GAMEOVER":
-                self.ui.draw_game_over(self.screen_width, self.screen_height)
-                
-            if self.state == "PAUSED":
-                self.ui.draw_pause_screen(self.screen_width, self.screen_height)
-
             # Back Button for Watch AI (Moved down to avoid overlap)
             # Also show if PAUSED from WATCH_AI, or GAMEOVER from WATCH_AI
             if self.state == "WATCH_AI" or (self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI") or (self.state == "GAMEOVER" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI"):
-                self.btn_back_rect = self.ui.draw_button(630, offset_y + 520, 150, 40, "BACK", True, mouse_pos)
+                self.btn_back_rect = self.ui.draw_button(left_pane_x + 30, btn_y, 150, 40, "BACK", True, mouse_pos)
             
             # Quit Button for Playing
             # Show if PLAYING or (PAUSED and NOT from WATCH_AI) or (GAMEOVER and NOT from WATCH_AI)
             elif self.state == "PLAYING" or (self.state == "PAUSED" and (not hasattr(self, 'last_state') or self.last_state != "WATCH_AI")) or (self.state == "GAMEOVER" and (not hasattr(self, 'last_state') or self.last_state != "WATCH_AI")):
-                self.btn_quit_rect = self.ui.draw_button(630, offset_y + 520, 150, 40, "QUIT GAME", True, mouse_pos)
+                self.btn_quit_rect = self.ui.draw_button(left_pane_x + 30, btn_y, 150, 40, "QUIT GAME", True, mouse_pos)
             
-            # Volume Slider
-            self.slider_rect = self.ui.draw_slider(630, offset_y + 450, 150, self.volume, "Volume", mouse_pos)
+            # Calculate grid rect for overlays
+            grid_rect_x = offset_x
+            grid_rect_y = offset_y
+            grid_rect_w = self.grid_width * self.cell_size
+            grid_rect_h = self.grid_height * self.cell_size
+            
+            if self.state == "GAMEOVER":
+                self.ui.draw_game_over(grid_rect_x, grid_rect_y, grid_rect_w, grid_rect_h)
+                
+            if self.state == "PAUSED":
+                self.ui.draw_pause_screen(grid_rect_x, grid_rect_y, grid_rect_w, grid_rect_h)
         
         pygame.display.flip()
 
