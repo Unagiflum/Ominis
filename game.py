@@ -80,6 +80,7 @@ class Game:
         self.training_step_count = 0
         self.current_trajectory = [] # Buffer for trajectory-based training
         self.start_stats = (0, 0) # (Height, Holes) at start of piece
+        self.last_save_time = 0 # Track last auto-save time
         
         self.load_settings()
 
@@ -323,6 +324,9 @@ class Game:
                             self.state = "TRAINING"
                             if not self.train_params['visual_mode']:
                                 self.audio.stop() # No music in headless
+                            
+                            # Initialize auto-save timer
+                            self.last_save_time = pygame.time.get_ticks()
                         
                         # Check sliders
                         for name, rect in self.train_slider_rects.items():
@@ -711,6 +715,15 @@ class Game:
             self.reset() # Auto-restart during training
             if not self.train_params['visual_mode']:
                 self.audio.stop()
+        
+        # Auto-save every 5 minutes
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_save_time > 5 * 60 * 1000:  # 5 minutes in milliseconds
+            if self.agent:
+                self.agent.save(self.get_model_filename())
+                print(f"Auto-saved model ({self.get_model_filename()}) at {current_time // 1000}s")
+                self.save_settings()
+                self.last_save_time = current_time
 
     def step_ai_watch(self):
         """Executes AI moves for watching mode (no training)."""
