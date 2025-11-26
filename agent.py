@@ -138,19 +138,14 @@ class MonteCarloAgent:
         current_height, current_holes = game.get_grid_stats()
         start_height, start_holes = start_stats
         
-        # DEBUG: Log the calculation
-        debug_parts = []
-        
         # 1. Line Clears (Big reward)
         if lines_cleared > 0:
             line_reward = (lines_cleared ** 2) * 100
             reward += line_reward
-            debug_parts.append(f"Lines:{lines_cleared}=+{line_reward}")
             
         # 2. Game Over Penalty
         if game_over:
             reward -= 500
-            debug_parts.append("GameOver=-500")
             
         # 3. Height Change
         # If height increased, penalty.
@@ -159,9 +154,6 @@ class MonteCarloAgent:
             h_factor = self.params['height_penalty'] / 100.0
             height_penalty = height_change * h_factor * 10
             reward -= height_penalty
-            debug_parts.append(f"Height:{start_height}→{current_height}=-{height_penalty:.1f}")
-        elif height_change < 0:
-            debug_parts.append(f"Height:{start_height}→{current_height}=0")
             
         # 4. Overhang Penalty
         # Penalize for each block in the newly placed piece that has a void beneath it
@@ -169,20 +161,11 @@ class MonteCarloAgent:
             o_factor = self.params['overhang_penalty'] / 100.0
             overhang_penalty = overhangs * o_factor * 20
             reward -= overhang_penalty
-            debug_parts.append(f"Overhangs:{overhangs}=-{overhang_penalty:.1f}")
             
         # 5. High Stacking Penalty
         # Penalize if THIS piece was placed in the upper half
         if piece_in_upper_half:
             reward -= 10
-            debug_parts.append("UpperHalf=-10")
-            
-        # Print debug info for every piece
-        if not hasattr(self, '_reward_count'):
-            self._reward_count = 0
-        self._reward_count += 1
-        
-        print(f"[Reward #{self._reward_count}] {' | '.join(debug_parts) if debug_parts else 'No changes'} | TOTAL={reward:.1f}")
             
         return reward
 
