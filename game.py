@@ -5,7 +5,7 @@ from tetrominoes import Pentomino
 from input_manager import InputManager
 from ui import UI
 from audio import AudioPlayer
-from agent import DQNAgent
+from agent import MonteCarloAgent
 
 class Game:
     def __init__(self):
@@ -156,6 +156,7 @@ class Game:
         self.lines_cleared_total = 0
         self.lines_cleared_total = 0
         self.fall_speed = 1000
+        self.current_trajectory = []
         
         # Determine allowed shapes based on selection
         from tetrominoes import get_allowed_shapes
@@ -280,8 +281,7 @@ class Game:
                                 # Initialize agent for watching
                                 # We need some default params for the agent structure
                                 # Let's use the current train_params
-                                self.agent = DQNAgent(self.train_params)
-                                self.agent = DQNAgent(self.train_params)
+                                self.agent = MonteCarloAgent(self.train_params)
                                 import os
                                 model_file = self.get_model_filename()
                                 if os.path.exists(model_file):
@@ -304,9 +304,7 @@ class Game:
                             self.train_params['visual_mode'] = not self.train_params['visual_mode']
                         elif self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
                             self.reset()
-                            self.agent = DQNAgent(self.train_params)
-                            # Try to load existing model
-                            self.agent = DQNAgent(self.train_params)
+                            self.agent = MonteCarloAgent(self.train_params)
                             # Try to load existing model
                             import os
                             model_file = self.get_model_filename()

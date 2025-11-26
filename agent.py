@@ -6,13 +6,21 @@ import numpy as np
 from collections import deque
 from model import OminisNet
 
-class DQNAgent:
+class MonteCarloAgent:
+    """
+    Agent using Monte Carlo supervised learning.
+    
+    Instead of TD bootstrapping with a target network, this agent:
+    1. Collects full trajectories for each falling piece
+    2. Computes a single scalar Monte Carlo return R_piece at the end
+    3. Trains Q(s, a) to predict R_piece for all (state, action) pairs in the trajectory
+    """
     def __init__(self, train_params):
         self.params = train_params
         
         # Hyperparameters
         self.batch_size = 64
-        self.gamma = 0.99
+        self.gamma = 0.99  # Only used if we decide to discount within trajectory
         self.epsilon = 1.0
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.995
@@ -27,20 +35,10 @@ class DQNAgent:
         hidden_size = self.HL_SIZES[self.params['hl_size_idx']]
         hidden_count = self.params['hl_count']
         
-        # Main network (updated every training step)
+        # Main network (updated every training step with Monte Carlo targets)
         self.model = OminisNet(hidden_size=hidden_size, hidden_count=hidden_count).to(self.device)
         
-        # Target network (updated periodically for stable targets)
-        self.target_model = OminisNet(hidden_size=hidden_size, hidden_count=hidden_count).to(self.device)
-        self.target_model.load_state_dict(self.model.state_dict())
-        self.target_model.eval()  # Always in eval mode
-        
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
-        
-        # Target network update parameters
-        self.target_update_frequency = 1000  # Hard update every N steps
-        self.tau = 0.005  # Soft update parameter (if using soft updates)
-        self.training_steps = 0
         
         # Action Space
         # Lateral: 0=Left, 1=Stay, 2=Right
@@ -111,6 +109,7 @@ class DQNAgent:
     def select_action(self, state):
         grid_input, next_piece_input = state
         
+        self.model.eval()
         if random.random() <= self.epsilon:
             # Random actions
             lat = random.randint(0, 2)
@@ -168,158 +167,93 @@ class DQNAgent:
             
         return reward
 
-    def add_trajectory(self, trajectory, final_reward):
-        """
-        trajectory: List of (state, action, next_state) tuples
-        final_reward: The reward calculated at the end of the trajectory
-        """
-        # Distribute reward to all steps
-        # Optional: Discount factor backwards? 
-        # User said "distributed to the entire series". 
-        # Usually this means each step gets the final reward (or discounted).
-        # Let's use a slight discount to encourage faster placement if possible, 
-        # or just flat reward if we want them to value all steps equally.
-        # Let's use gamma decay from the end.
-        
-        current_reward = final_reward
-        
-        # Iterate backwards
-        for i in range(len(trajectory) - 1, -1, -1):
-            state, action, next_state = trajectory[i]
-            
-            # The last step gets the full final_reward.
-            # Previous steps get discounted version?
-            # Actually, standard Q-learning does this via Bellman update.
-            # But here we are assigning the IMMEDIATE reward for the transition.
-            # If we assign the final outcome as the immediate reward for ALL steps,
-            # it's like Monte Carlo return assignment.
-            
-            # Let's assign the final_reward to the LAST step.
-            # And 0 (or small step penalty) to others?
-            # User said "reward is distributed to the entire series".
-            # This might mean: Reward for step i = Final Reward / N ? No, that dilutes it.
-            # It likely means: Each step contributed to this outcome.
-            # Let's give the final_reward to EVERY step.
-            # This tells the AI: "This move led to this good/bad outcome".
-            
-            # However, if we give +100 to every step, the total return is N * 100.
-            # If we have 10 steps, that's huge.
-            # Maybe we should just give it to the last step, and let Q-propagation handle the rest?
-            # BUT, the user specifically asked for "distributed".
-            # "distributed to the entire series of moves, calculating output and prediction at each individual step."
-            
-            # Interpretation: The user wants to avoid the "sparse reward" problem where only the last move sees the reward.
-            # So let's assign the final reward to ALL steps in the trajectory.
-            # This is a form of Reward Shaping.
-            
-            step_reward = final_reward
-            
-            # Mark done only on the last step?
-            # If the game is over, the last step is done.
-            # If just piece placed, it's not "done" for the episode, but it is a terminal state for the piece.
-            # In infinite Tetris, "done" usually means Game Over.
-            # So done=False for all except Game Over.
-            
-            is_last_step = (i == len(trajectory) - 1)
-            # We need to know if the game ended. 
-            # We can infer from final_reward if it's the penalty? No.
-            # We should pass 'done' status.
-            
-            # Let's update the signature to include done.
-            pass
+
 
     def add_trajectory_with_done(self, trajectory, final_reward, game_over):
+        """
+        Add a complete piece trajectory to memory with Monte Carlo return.
+        
+        Args:
+            trajectory: List of (state, action, next_state) tuples for one piece
+            final_reward: R_piece - scalar Monte Carlo return for this piece
+            game_over: Whether the game ended (unused in current implementation)
+        """
         for i in range(len(trajectory)):
             state, action, next_state = trajectory[i]
             
-            # Assign final reward to all steps
-            # Maybe slightly discounted by distance to end?
-            # reward = final_reward * (self.gamma ** (len(trajectory) - 1 - i))
-            # Let's try flat reward first as it's more robust for "this sequence was good".
+            # Monte Carlo: All steps get the same final return R_piece
+            # For discounted returns, use: R_piece * (gamma ** (len(trajectory) - 1 - i))
+            R_piece = final_reward
             
-            reward = final_reward
-            
-            # Only the very last step of the GAME has done=True.
-            # Intermediate piece placements have done=False.
-            is_terminal = game_over if (i == len(trajectory) - 1) else False
-            
-            self.remember(state, action, reward, next_state, is_terminal)
+            # Store simplified tuple: (state, action, R_piece)
+            # We don't need next_state since we're not doing TD bootstrapping.
+            # The 'done' flag is also not stored because R_piece is the full return.
+            self.remember(state, action, R_piece)
 
 
-    def remember(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
+    def remember(self, state, action, R_piece):
+        """
+        Store a (state, action, Monte Carlo return) tuple in replay memory.
+        
+        Args:
+            state: (grid_input, next_piece_input) tuple
+            action: [lateral_idx, rotation_idx, vertical_idx] list
+            R_piece: Scalar Monte Carlo return for the piece trajectory
+        """
+        self.memory.append((state, action, R_piece))
 
     def replay(self):
+        """
+        Train the network on a batch of experiences using Monte Carlo returns.
+        
+        Loss: MSE between Q(state, action) and R_piece for chosen actions.
+        No TD bootstrapping or target network involved.
+        """
         if len(self.memory) < self.batch_size:
             return
             
+        self.model.train()
         minibatch = random.sample(self.memory, self.batch_size)
         
         # Prepare batches
         grid_batch = []
         next_piece_batch = []
         action_batch = []
-        reward_batch = []
-        next_grid_batch = []
-        next_next_piece_batch = []
-        done_batch = []
+        R_piece_batch = []
         
-        for state, action, reward, next_state, done in minibatch:
+        for state, action, R_piece in minibatch:
             grid_batch.append(state[0])
             next_piece_batch.append(state[1])
             action_batch.append(action)
-            reward_batch.append(reward)
-            next_grid_batch.append(next_state[0])
-            next_next_piece_batch.append(next_state[1])
-            done_batch.append(done)
+            R_piece_batch.append(R_piece)
             
+        # Convert to tensors
         grid_tensor = torch.FloatTensor(np.array(grid_batch)).to(self.device)
         next_piece_tensor = torch.FloatTensor(np.array(next_piece_batch)).to(self.device)
-        next_grid_tensor = torch.FloatTensor(np.array(next_grid_batch)).to(self.device)
-        next_next_piece_tensor = torch.FloatTensor(np.array(next_next_piece_batch)).to(self.device)
-        rewards = torch.FloatTensor(reward_batch).to(self.device)
-        dones = torch.FloatTensor(done_batch).to(self.device)
+        R_piece_tensor = torch.FloatTensor(R_piece_batch).to(self.device)
         
-        # Current Q values from main network
+        # Forward pass through main network
         lat_q, rot_q, vert_q = self.model(grid_tensor, next_piece_tensor)
         
-        # Target Q values from stable target network (key change for stability)
-        with torch.no_grad():
-            next_lat_q, next_rot_q, next_vert_q = self.target_model(next_grid_tensor, next_next_piece_tensor)
-            
-        # Update Q values for taken actions
-        loss = 0
-        criterion = torch.nn.MSELoss()
+        # Compute loss using only the Q-values for the chosen actions
+        # We use gather to select Q(s, a) for the action taken
+        action_tensor = torch.LongTensor(action_batch).to(self.device)
         
-        for i in range(self.batch_size):
-            lat_act, rot_act, vert_act = action_batch[i]
-            
-            # Target = Reward + Gamma * Max(Next Q)
-            target_val = rewards[i]
-            if not dones[i]:
-                # Combined max Q? Or separate?
-                # BDQ usually treats them independently or sums them.
-                # Let's treat independently for simplicity.
-                target_val += self.gamma * (torch.max(next_lat_q[i]) + torch.max(next_rot_q[i]) + torch.max(next_vert_q[i])) / 3.0
-            
-            # We want each head to predict this target? 
-            # Or should we split reward?
-            # Standard BDQ: Q_global = V(s) + A(s, a).
-            # Here we have 3 independent heads. Let's train them to maximize the common reward.
-            
-            target_lat = lat_q[i].clone()
-            target_lat[lat_act] = target_val
-            
-            target_rot = rot_q[i].clone()
-            target_rot[rot_act] = target_val
-            
-            target_vert = vert_q[i].clone()
-            target_vert[vert_act] = target_val
-            
-            loss += criterion(lat_q[i], target_lat)
-            loss += criterion(rot_q[i], target_rot)
-            loss += criterion(vert_q[i], target_vert)
-            
+        # Extract Q-values for chosen actions from each head
+        lat_q_chosen = lat_q.gather(1, action_tensor[:, 0:1]).squeeze(1)  # Shape: (batch_size,)
+        rot_q_chosen = rot_q.gather(1, action_tensor[:, 1:2]).squeeze(1)
+        vert_q_chosen = vert_q.gather(1, action_tensor[:, 2:3]).squeeze(1)
+        
+        # Monte Carlo supervised loss: All heads predict the same R_piece
+        criterion = torch.nn.MSELoss()
+        loss_lat = criterion(lat_q_chosen, R_piece_tensor)
+        loss_rot = criterion(rot_q_chosen, R_piece_tensor)
+        loss_vert = criterion(vert_q_chosen, R_piece_tensor)
+        
+        # Total loss is the sum of all head losses
+        loss = loss_lat + loss_rot + loss_vert
+        
+        # Backpropagation
         self.optimizer.zero_grad()
         loss.backward()
         
@@ -331,60 +265,40 @@ class DQNAgent:
         # Decay epsilon
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
-            
-        # Update target network periodically (hard update)
-        self.training_steps += 1
-        if self.training_steps % self.target_update_frequency == 0:
-            self.update_target_network()
 
 
 
-    def update_target_network(self, soft_update=False):
-        """
-        Update target network weights.
-        
-        Args:
-            soft_update: If True, use soft (gradual) updates with tau.
-                        If False, use hard (complete copy) updates.
-        """
-        if soft_update:
-            # Soft update: θ_target = τ*θ_local + (1 - τ)*θ_target
-            for target_param, param in zip(self.target_model.parameters(), self.model.parameters()):
-                target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
-        else:
-            # Hard update: Complete copy of weights
-            self.target_model.load_state_dict(self.model.state_dict())
+
 
     def save(self, path):
+        """
+        Save model checkpoint.
+        
+        Saves:
+        - model_state_dict: Main network weights
+        - optimizer_state_dict: Optimizer state
+        - epsilon: Current exploration rate
+        - params: Architecture parameters
+        """
         torch.save({
             'model_state_dict': self.model.state_dict(),
-            'target_model_state_dict': self.target_model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'epsilon': self.epsilon,
-            'training_steps': self.training_steps,
             'params': self.params
         }, path)
 
     def load(self, path):
+        """
+        Load model checkpoint.
+        
+        Loads main network weights, optimizer state, and epsilon.
+        Architecture params are taken from current UI settings, not from file.
+        """
         checkpoint = torch.load(path, map_location=self.device)
         self.model.load_state_dict(checkpoint['model_state_dict'])
-        
-        # Load target network if available (backwards compatibility)
-        if 'target_model_state_dict' in checkpoint:
-            self.target_model.load_state_dict(checkpoint['target_model_state_dict'])
-        else:
-            # If loading old model without target network, sync from main model
-            self.target_model.load_state_dict(self.model.state_dict())
-        
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.epsilon = checkpoint['epsilon']
         
-        # Load training steps if available (backwards compatibility)
-        if 'training_steps' in checkpoint:
-            self.training_steps = checkpoint['training_steps']
-        else:
-            self.training_steps = 0
-        
-        # We don't overwrite params from file, we use the current UI params
-        # But we could check if they match? For now, trust the UI.
+        # Note: We don't load params from file, we use the current UI params
+        # This ensures the slider values control the architecture
 

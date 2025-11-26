@@ -20,8 +20,8 @@ game.train_params['visual_mode'] = True # Visual mode ON
 print("--- Clicking Start (Visual Mode) ---")
 # Manually trigger the start logic
 game.reset()
-from agent import DQNAgent
-game.agent = DQNAgent(game.train_params)
+from agent import MonteCarloAgent
+game.agent = MonteCarloAgent(game.train_params)
 game.state = "TRAINING"
 
 print(f"State after start: {game.state}")
