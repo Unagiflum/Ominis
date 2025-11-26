@@ -627,8 +627,8 @@ class Game:
         self.agent.replay()
         
         if done:
+            self.state = "TRAINING" # Restore state BEFORE reset so it knows to use training params
             self.reset() # Auto-restart during training
-            self.state = "TRAINING"
             if not self.train_params['visual_mode']:
                 self.audio.stop()
 
