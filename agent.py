@@ -130,40 +130,59 @@ class MonteCarloAgent:
         
         return [lat, rot, vert]
 
-    def calculate_reward(self, game, lines_cleared, game_over, start_stats, piece_in_upper_half):
+    def calculate_reward(self, game, lines_cleared, game_over, start_stats, piece_in_upper_half, overhangs):
         # Calculate reward based on the CHANGE in state
         reward = 0
         
-        # 1. Line Clears (Big reward)
-        if lines_cleared > 0:
-            reward += (lines_cleared ** 2) * 100
-            
-        # 2. Game Over Penalty
-        if game_over:
-            reward -= 500
-            
         # Get current stats
         current_height, current_holes = game.get_grid_stats()
         start_height, start_holes = start_stats
         
+        # DEBUG: Log the calculation
+        debug_parts = []
+        
+        # 1. Line Clears (Big reward)
+        if lines_cleared > 0:
+            line_reward = (lines_cleared ** 2) * 100
+            reward += line_reward
+            debug_parts.append(f"Lines:{lines_cleared}=+{line_reward}")
+            
+        # 2. Game Over Penalty
+        if game_over:
+            reward -= 500
+            debug_parts.append("GameOver=-500")
+            
         # 3. Height Change
         # If height increased, penalty.
         height_change = current_height - start_height
         if height_change > 0:
             h_factor = self.params['height_penalty'] / 100.0
-            reward -= height_change * h_factor * 10 # Multiplier for impact
+            height_penalty = height_change * h_factor * 10
+            reward -= height_penalty
+            debug_parts.append(f"Height:{start_height}→{current_height}=-{height_penalty:.1f}")
+        elif height_change < 0:
+            debug_parts.append(f"Height:{start_height}→{current_height}=0")
             
-        # 4. Holes Change
-        # If holes increased, penalty.
-        holes_change = current_holes - start_holes
-        if holes_change > 0:
+        # 4. Overhang Penalty
+        # Penalize for each block in the newly placed piece that has a void beneath it
+        if overhangs > 0:
             o_factor = self.params['overhang_penalty'] / 100.0
-            reward -= holes_change * o_factor * 20 # Multiplier for impact
+            overhang_penalty = overhangs * o_factor * 20
+            reward -= overhang_penalty
+            debug_parts.append(f"Overhangs:{overhangs}=-{overhang_penalty:.1f}")
             
         # 5. High Stacking Penalty
         # Penalize if THIS piece was placed in the upper half
         if piece_in_upper_half:
             reward -= 10
+            debug_parts.append("UpperHalf=-10")
+            
+        # Print debug info for every piece
+        if not hasattr(self, '_reward_count'):
+            self._reward_count = 0
+        self._reward_count += 1
+        
+        print(f"[Reward #{self._reward_count}] {' | '.join(debug_parts) if debug_parts else 'No changes'} | TOTAL={reward:.1f}")
             
         return reward
 

@@ -83,6 +83,11 @@ class Game:
         self.start_stats = (0, 0) # (Height, Holes) at start of piece
         self.last_save_time = 0 # Track last auto-save time
         
+        # Pending trajectory data for visual mode (defer processing until animation completes)
+        self.pending_trajectory = None
+        self.pending_reward = None
+        self.pending_done = None
+        
         self.load_settings()
 
     def get_model_filename(self):
@@ -485,7 +490,18 @@ class Game:
                 # Directly apply clears without animation
                 self.clearing_lines = lines_to_clear
                 self.apply_line_clears()
-                return False # Return False so game_tick proceeds to spawn new piece
+                
+                # CRITICAL FIX: Spawn new piece and update start_stats
+                self.current_piece = self.next_piece
+                self.start_stats = self.get_grid_stats()  # Update for new piece
+                self.next_piece = self.spawn_piece()
+                
+                # Check for game over on spawn
+                if self.grid.check_collision(self.current_piece):
+                    self.state = "GAMEOVER"
+                    self.audio.stop()
+                
+                return True  # Line clear handled, piece spawned
             else:
                 # Normal animation flow
                 self.clearing_lines = lines_to_clear
@@ -651,6 +667,11 @@ class Game:
         if not self.agent:
             return
 
+        # CRITICAL: Capture start_stats NOW, before piece locks
+        # If we don't do this, game_tick() will update self.start_stats when spawning the next piece,
+        # and the reward calculation will compare the same values and always get 0 change.
+        piece_start_stats = self.start_stats
+
         # 1. Get Current State
         state = self.agent.get_state(self)
         
@@ -680,12 +701,28 @@ class Game:
         # Check if piece is in upper half BEFORE locking
         half_height = self.grid_height // 2
         piece_in_upper_half = False
+        overhangs = 0  # Count blocks in piece with voids beneath them
+        
         if piece_before:
             for x, y in piece_before.shape:
                 abs_y = piece_before.y + y
+                abs_x = piece_before.x + x
+                
+                # Check if in upper half
                 if abs_y < half_height:
                     piece_in_upper_half = True
-                    break
+                
+                # Check for overhang: is there a void directly beneath this block?
+                # (Only count if this block is within grid bounds and above ground)
+                if 0 <= abs_x < self.grid_width and 0 <= abs_y < self.grid_height - 1:
+                    # Check if supported by another block in the same piece
+                    if (x, y + 1) in piece_before.shape:
+                        continue
+
+                    cell_below_y = abs_y + 1
+                    # Check if cell below is empty
+                    if self.grid.grid[cell_below_y][abs_x] == (0, 0, 0):
+                        overhangs += 1
         
         # Execute the moves
         self.step_ai(moves)
@@ -707,7 +744,7 @@ class Game:
             lines_cleared = len(self.clearing_lines)
             piece_locked = True
         else:
-            piece_locked = (lines_cleared > 0) or done or (self.current_piece != piece_before)
+            piece_locked = (lines_cleared > 0) or done or (self.current_piece is not piece_before)
         
         # 4. Get New State
         next_state = self.agent.get_state(self)
@@ -720,16 +757,22 @@ class Game:
         # 6. If Piece Locked, Distribute Reward and Train
         if piece_locked:
             # Calculate Final Reward for this placement
-            final_reward = self.agent.calculate_reward(self, lines_cleared, done, self.start_stats, piece_in_upper_half)
+            # Use piece_start_stats (captured at the beginning) instead of self.start_stats
+            # Pass overhangs (not grid-wide holes) for accurate overhang penalty
+            final_reward = self.agent.calculate_reward(self, lines_cleared, done, piece_start_stats, piece_in_upper_half, overhangs)
             
-            # Add trajectory to memory with this reward
-            self.agent.add_trajectory_with_done(self.current_trajectory, final_reward, done)
-            
-            # Clear trajectory
-            self.current_trajectory = []
-            
-            # Replay (Train)
-            self.agent.replay()
+            # In visual mode with animations, defer trajectory processing
+            if self.state == "ANIMATING_CLEAR":
+                # Store trajectory data to process after animation completes
+                self.pending_trajectory = self.current_trajectory[:]
+                self.pending_reward = final_reward
+                self.pending_done = done
+                self.current_trajectory = []
+            else:
+                # Headless mode or no animation: process immediately
+                self.agent.add_trajectory_with_done(self.current_trajectory, final_reward, done)
+                self.current_trajectory = []
+                self.agent.replay()
         
         if done:
             self.state = "TRAINING" # Restore state BEFORE reset so it knows to use training params
@@ -856,10 +899,25 @@ class Game:
                          self.state = "PLAYING" if self.state != "WATCH_AI" else "WATCH_AI"
                 
                 self.current_piece = self.next_piece
+                self.start_stats = self.get_grid_stats()  # Update for new piece
                 self.next_piece = self.spawn_piece()
                 if self.grid.check_collision(self.current_piece):
                     self.state = "GAMEOVER"
                     self.audio.stop()
+                
+                # Process pending trajectory if in training mode
+                if self.state == "TRAINING" and self.pending_trajectory is not None:
+                    self.agent.add_trajectory_with_done(
+                        self.pending_trajectory, 
+                        self.pending_reward, 
+                        self.pending_done
+                    )
+                    self.agent.replay()
+                    
+                    # Clear pending data
+                    self.pending_trajectory = None
+                    self.pending_reward = None
+                    self.pending_done = None
 
     def draw(self):
         self.ui.draw_background()
