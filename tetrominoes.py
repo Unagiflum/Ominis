@@ -114,10 +114,13 @@ SHAPE_COLORS = {
     'Triomino_L': (255, 140, 0), # Dark Orange
 }
 
-def get_allowed_shapes(include_pentominoes=True, include_tetrominoes=False, include_ominis=False):
+def get_allowed_shapes(include_pentominoes=True, include_tetrominoes=False, include_ominis=False, max_size=5):
     allowed = []
     for shape, blocks in SHAPES.items():
         count = len(blocks)
+        if count > max_size:
+            continue
+            
         if count == 5 and include_pentominoes:
             allowed.append(shape)
         elif count == 4 and include_tetrominoes:

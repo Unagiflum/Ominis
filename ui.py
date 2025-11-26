@@ -253,27 +253,103 @@ class UI:
                 
             current_y += line_height
 
-    def draw_train_menu(self, screen_width, screen_height, visual_mode, mouse_pos):
+    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid):
         self.draw_background()
+        
+        # Standard Padding
+        padding = 20
+        left_pane_width = 350 # Wider for sliders
         
         # Title
         title = self.large_font.render("TRAIN AI", True, self.text_color)
-        self.screen.blit(title, (screen_width // 2 - title.get_width() // 2, 100))
+        self.screen.blit(title, (padding, padding))
         
-        # Instructions
-        inst = self.font.render("AI Training Mode (Headless)", True, (150, 150, 150))
-        self.screen.blit(inst, (screen_width // 2 - inst.get_width() // 2, 200))
+        current_y = padding + 60
         
-        # Visual Mode Checkbox
-        chk_rect = self.draw_checkbox(screen_width // 2 - 100, 300, visual_mode, "Visual Mode", mouse_pos)
+        # --- Architecture Group ---
+        arch_height = 160
+        self.draw_group_box(padding, current_y, left_pane_width, arch_height, "Architecture")
         
-        # Start Button
-        start_rect = self.draw_button(screen_width // 2 - 100, 400, 200, 50, "START", True, mouse_pos)
+        # Hidden Layer Size (128, 256, 512)
+        # Map 0.0-1.0 to index 0-2
+        hl_sizes = [128, 256, 512]
+        hl_size_idx = int(params['hl_size_idx'])
+        hl_size_val = hl_sizes[hl_size_idx]
+        
+        # Slider logic handled in Game, here we just draw based on param 0.0-1.0 equivalent
+        # But params passed are likely the actual values or indices? 
+        # Let's assume params is a dict of values, and we might need rects for interaction.
+        # Actually, for sliders, we need to return rects so Game can update them.
+        
+        # Let's define the slider rects here and return them in a dict
+        slider_rects = {}
+        
+        sy = current_y + 40
+        # Hidden Layer Size
+        s_rect = self.draw_slider(padding + 20, sy, 200, params['hl_size_idx'] / 2.0, f"Hidden Size: {hl_size_val}", mouse_pos)
+        slider_rects['hl_size'] = s_rect
+        sy += 50
+        
+        # Hidden Layer Count (1, 2, 3, 4)
+        s_rect = self.draw_slider(padding + 20, sy, 200, (params['hl_count'] - 1) / 3.0, f"Hidden Layers: {params['hl_count']}", mouse_pos)
+        slider_rects['hl_count'] = s_rect
+        
+        current_y += arch_height + 20
+        
+        # --- Reward / Curriculum Group ---
+        reward_height = 220
+        self.draw_group_box(padding, current_y, left_pane_width, reward_height, "Reward & Curriculum")
+        
+        sy = current_y + 40
+        # Height Penalty
+        s_rect = self.draw_slider(padding + 20, sy, 200, params['height_penalty'] / 100.0, f"Height Penalty: {params['height_penalty']}%", mouse_pos)
+        slider_rects['height_penalty'] = s_rect
+        sy += 50
+        
+        # Overhang Penalty
+        s_rect = self.draw_slider(padding + 20, sy, 200, params['overhang_penalty'] / 100.0, f"Overhang Penalty: {params['overhang_penalty']}%", mouse_pos)
+        slider_rects['overhang_penalty'] = s_rect
+        sy += 50
+        
+        # Max Polyomino Size (2, 3, 4, 5)
+        # Map 0.0-1.0 to 2-5
+        s_rect = self.draw_slider(padding + 20, sy, 200, (params['max_size'] - 2) / 3.0, f"Max Piece Size: {params['max_size']}", mouse_pos)
+        slider_rects['max_size'] = s_rect
+        
+        
+        # Bottom Controls
+        bottom_y = screen_height - padding - 50 
         
         # Back Button
-        btn_rect = self.draw_button(screen_width // 2 - 100, 500, 200, 50, "BACK", True, mouse_pos)
+        btn_back_rect = self.draw_button(padding, bottom_y, 150, 40, "BACK", True, mouse_pos)
+        bottom_y -= 50
         
-        return btn_rect, chk_rect, start_rect
+        # Start Button
+        btn_start_rect = self.draw_button(padding, bottom_y, 150, 40, "START", True, mouse_pos)
+        bottom_y -= 50
+        
+        # Visual Mode Checkbox
+        chk_rect = self.draw_checkbox(padding, bottom_y, params['visual_mode'], "Visual Mode", mouse_pos)
+        
+        # Draw Game Board on Right
+        offset_x = left_pane_width + padding * 2
+        offset_y = padding + 5
+        
+        self.draw_grid(grid, offset_x, offset_y)
+        
+        return btn_back_rect, chk_rect, btn_start_rect, slider_rects
+
+    def draw_group_box(self, x, y, width, height, title):
+        rect = pygame.Rect(x, y, width, height)
+        pygame.draw.rect(self.screen, self.bg_color, rect, border_radius=8)
+        pygame.draw.rect(self.screen, self.border_color, rect, 2, border_radius=8)
+        
+        # Title on top border
+        title_surf = self.font.render(f" {title} ", True, self.accent_color)
+        # Clear background behind title
+        title_rect = title_surf.get_rect(topleft=(x + 20, y - 10))
+        pygame.draw.rect(self.screen, self.bg_color, title_rect)
+        self.screen.blit(title_surf, title_rect)
 
     def draw_game_over(self, x, y, width, height):
         overlay = pygame.Surface((width, height))

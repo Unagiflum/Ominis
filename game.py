@@ -5,6 +5,7 @@ from tetrominoes import Pentomino
 from input_manager import InputManager
 from ui import UI
 from audio import AudioPlayer
+from agent import DQNAgent
 
 class Game:
     def __init__(self):
@@ -49,8 +50,6 @@ class Game:
         self.chk_omi_rect = None
         self.btn_start_rect = None
         self.btn_train_rect = None
-        self.btn_start_rect = None
-        self.btn_train_rect = None
         self.btn_watch_rect = None
         self.btn_back_rect = None
         self.train_chk_rect = None
@@ -59,11 +58,25 @@ class Game:
         self.btn_quit_rect = None
         self.slider_rect = None
         self.dragging_slider = False
+        
+        # Training Parameters
+        self.train_params = {
+            'visual_mode': True,
+            'hl_size_idx': 1, # 0=128, 1=256, 2=512
+            'hl_count': 2,
+            'height_penalty': 50,
+            'overhang_penalty': 50,
+            'max_size': 5
+        }
+        self.train_slider_rects = {}
+        self.active_slider = None
 
         # Input handling state (DAS - Delayed Auto Shift)
         self.das_delay = 200 # ms before repeat starts
         self.das_repeat = 50 # ms between repeats
         self.left_held_time = 0
+        self.agent = None
+        self.training_step_count = 0
 
     def spawn_piece(self):
         p = Pentomino(self.grid_width // 2, 0, self.allowed_shapes)
@@ -83,7 +96,16 @@ class Game:
         
         # Determine allowed shapes based on selection
         from tetrominoes import get_allowed_shapes
-        self.allowed_shapes = get_allowed_shapes(self.include_pentominoes, self.include_tetrominoes, self.include_ominis)
+        
+        max_size = 5
+        if self.state == "TRAINING" or self.state == "TRAIN_MENU": # Use training params
+             max_size = self.train_params['max_size']
+             # In training, maybe we force all types enabled? Or respect checkboxes?
+             # User said "Max size polyomino to include". Implies we include everything up to that size.
+             # So let's enable all flags if in training, but filter by size.
+             self.allowed_shapes = get_allowed_shapes(True, True, True, max_size)
+        else:
+             self.allowed_shapes = get_allowed_shapes(self.include_pentominoes, self.include_tetrominoes, self.include_ominis)
         
         # Fallback if nothing selected (should be prevented by UI, but safety first)
         if not self.allowed_shapes:
@@ -181,10 +203,25 @@ class Game:
                         if self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
                             self.state = "MENU"
                         elif self.train_chk_rect and self.train_chk_rect.collidepoint(event.pos):
-                            self.train_visual_mode = not self.train_visual_mode
+                            self.train_params['visual_mode'] = not self.train_params['visual_mode']
                         elif self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
                             self.reset()
+                            self.agent = DQNAgent(self.train_params)
                             self.state = "TRAINING"
+                        
+                        # Check sliders
+                        for name, rect in self.train_slider_rects.items():
+                            if rect.collidepoint(event.pos):
+                                self.active_slider = name
+                                self.update_train_slider(event.pos[0])
+                                
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:
+                        self.active_slider = None
+                        
+                elif event.type == pygame.MOUSEMOTION:
+                    if self.active_slider:
+                        self.update_train_slider(event.pos[0])
 
             elif self.state == "WATCH_AI" or (self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI") or (self.state == "GAMEOVER" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI"):
                  if event.type == pygame.MOUSEBUTTONDOWN:
@@ -200,7 +237,7 @@ class Game:
                             self.state = "MENU"
                             self.audio.stop()
                         elif self.state == "TRAINING" and self.train_chk_rect and self.train_chk_rect.collidepoint(event.pos):
-                            self.train_visual_mode = not self.train_visual_mode
+                            self.train_params['visual_mode'] = not self.train_params['visual_mode']
 
             if self.state == "PLAYING" or self.state == "PAUSED" or self.state == "WATCH_AI" or self.state == "GAMEOVER" or self.state == "TRAINING":
                  if event.type == pygame.MOUSEBUTTONDOWN:
@@ -444,6 +481,69 @@ class Game:
         # Advance game state
         self.game_tick()
 
+    def step_ai_training(self):
+        if not self.agent:
+            return
+
+        # 1. Get Current State
+        state = self.agent.get_state(self)
+        
+        # 2. Select Action
+        action = self.agent.select_action(state)
+        lat_idx, rot_idx, vert_idx = action
+        
+        # Map indices to moves
+        moves = []
+        
+        # Lateral: 0=Left, 1=Stay, 2=Right
+        if lat_idx == 0: moves.append("LEFT")
+        elif lat_idx == 2: moves.append("RIGHT")
+        
+        # Rotate: 0=CCW, 1=Stay, 2=CW
+        if rot_idx == 0: moves.append("ROTATE_CCW")
+        elif rot_idx == 2: moves.append("ROTATE_CW")
+        
+        # Vertical: 0=Down, 1=Stay
+        if vert_idx == 0: moves.append("DOWN")
+        
+        # 3. Execute Moves (and advance tick)
+        # We need to track lines cleared and game over status
+        # Reset these counters before step
+        self.lines_cleared_this_step = 0
+        # Check game over after step
+        
+        # Execute moves logic (similar to step_ai but we need to capture results)
+        # For simplicity, let's reuse step_ai logic but we need to know if lines were cleared.
+        # We can check self.lines_cleared_total before and after?
+        # Or hook into update_score?
+        
+        lines_before = self.lines_cleared_total
+        score_before = self.score
+        
+        # Execute the moves
+        self.step_ai(moves)
+        
+        lines_after = self.lines_cleared_total
+        lines_cleared = lines_after - lines_before
+        
+        # Check Game Over
+        done = (self.state == "GAMEOVER")
+        
+        # 4. Get New State
+        next_state = self.agent.get_state(self)
+        
+        # 5. Calculate Reward
+        reward = self.agent.calculate_reward(self, lines_cleared, done)
+        
+        # 6. Remember
+        self.agent.remember(state, action, reward, next_state, done)
+        
+        # 7. Replay (Train)
+        self.agent.replay()
+        
+        if done:
+            self.reset() # Auto-restart during training
+
     def update(self):
         current_time = pygame.time.get_ticks()
         
@@ -467,16 +567,16 @@ class Game:
                 self.fall_time = current_time
 
         elif self.state == "TRAINING":
-            if self.train_visual_mode:
+            if self.train_params['visual_mode']:
                 # Visual Mode: Sync with fall speed
                 if current_time - self.fall_time > self.fall_speed:
-                    self.step_ai([]) # Pass dummy moves for now
+                    self.step_ai_training()
                     self.fall_time = current_time
             else:
                 # Headless Mode: Run as fast as possible (called every frame)
                 # We might want to run multiple steps per frame if possible, 
                 # but for now one step per frame (uncapped FPS) is good.
-                self.step_ai([]) # Pass dummy moves for now
+                self.step_ai_training()
                 
         elif self.state == "ANIMATING_CLEAR":
             if current_time - self.animation_timer > 200: # 200ms flash
@@ -551,7 +651,7 @@ class Game:
             self.btn_train_rect = self.ui.draw_button(self.screen_width // 2 - 100, 590, 200, 50, "TRAIN AI", True, mouse_pos)
             
         elif self.state == "TRAIN_MENU":
-            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_visual_mode, mouse_pos)
+            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.train_slider_rects = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, self.grid)
             
         else:
             # Standard Padding
@@ -623,7 +723,7 @@ class Game:
                 
                 if self.state == "TRAINING":
                      # Draw Checkbox above Quit button
-                     self.train_chk_rect = self.ui.draw_checkbox(left_pane_x + 30, btn_y - 40, self.train_visual_mode, "Visual Mode", mouse_pos)
+                     self.train_chk_rect = self.ui.draw_checkbox(left_pane_x + 30, btn_y - 40, self.train_params['visual_mode'], "Visual Mode", mouse_pos)
             
             # Calculate grid rect for overlays
             grid_rect_x = offset_x
@@ -645,8 +745,36 @@ class Game:
             rel_x = mouse_x - self.slider_rect.x
             vol = rel_x / self.slider_rect.width
             self.volume = max(0.0, min(1.0, vol))
-            self.volume = max(0.0, min(1.0, vol))
             self.audio.set_volume(self.volume)
+
+    def update_train_slider(self, mouse_x):
+        if not self.active_slider:
+            return
+            
+        rect = self.train_slider_rects[self.active_slider]
+        rel_x = mouse_x - rect.x
+        val = max(0.0, min(1.0, rel_x / rect.width))
+        
+        if self.active_slider == 'hl_size':
+            # Map 0-1 to 0, 1, 2
+            idx = int(val * 2.99)
+            self.train_params['hl_size_idx'] = idx
+        elif self.active_slider == 'hl_count':
+            # Map 0-1 to 1, 2, 3, 4
+            count = 1 + int(val * 3.99)
+            self.train_params['hl_count'] = count
+        elif self.active_slider == 'height_penalty':
+            # Map 0-1 to 0-100, step 10
+            raw = int(val * 100)
+            self.train_params['height_penalty'] = round(raw / 10) * 10
+        elif self.active_slider == 'overhang_penalty':
+            # Map 0-1 to 0-100, step 10
+            raw = int(val * 100)
+            self.train_params['overhang_penalty'] = round(raw / 10) * 10
+        elif self.active_slider == 'max_size':
+            # Map 0-1 to 2, 3, 4, 5
+            size = 2 + int(val * 3.99)
+            self.train_params['max_size'] = size
 
     def run(self):
         running = True
@@ -655,7 +783,7 @@ class Game:
             running = self.handle_input()
             self.update()
             
-            if self.state == "TRAINING" and not self.train_visual_mode:
+            if self.state == "TRAINING" and not self.train_params['visual_mode']:
                 # Headless Mode
                 headless_frame_count += 1
                 if headless_frame_count % 60 == 0: # Draw every 60 frames (approx 1 sec if running at 60fps, but here it's uncapped)
