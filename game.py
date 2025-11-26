@@ -112,11 +112,20 @@ class Game:
              self.allowed_shapes = get_allowed_shapes(True, False, False)
         self.current_piece = self.spawn_piece()
         self.next_piece = self.spawn_piece()
-        self.state = "PLAYING"
+        
+        # Only set to PLAYING if not already in TRAINING (to avoid overwriting state during training reset)
+        if self.state != "TRAINING":
+            self.state = "PLAYING"
+            
         self.left_held_time = 0
         self.right_held_time = 0
         self.audio.reset_sequence()
-        self.audio.start()
+        
+        # Only start music if not in headless training
+        if self.state == "TRAINING" and not self.train_params['visual_mode']:
+            pass
+        else:
+            self.audio.start()
 
     def update_score(self, lines):
         if lines > 0:
@@ -173,6 +182,10 @@ class Game:
             action = self.input_manager.get_action(event)
             
             if action == "EXIT":
+                if self.state == "TRAINING" and self.agent:
+                    self.agent.save("ominis_model.pth")
+                    print("Model saved (ESC).")
+
                 if self.state == "PLAYING" or self.state == "GAMEOVER" or self.state == "WATCH_AI" or self.state == "TRAIN_MENU" or self.state == "TRAINING":
                     self.state = "MENU"
                     self.audio.stop()
@@ -191,10 +204,48 @@ class Game:
                             if self.include_pentominoes or self.include_tetrominoes or self.include_ominis:
                                 self.reset()
                         elif self.btn_train_rect and self.btn_train_rect.collidepoint(mouse_pos):
+                            # Load saved model architecture if it exists
+                            import os
+                            import torch
+                            if os.path.exists("ominis_model.pth"):
+                                try:
+                                    checkpoint = torch.load("ominis_model.pth", map_location="cpu")
+                                    saved_params = checkpoint.get('params', {})
+                                    # Update sliders to match saved architecture
+                                    if 'hl_size_idx' in saved_params:
+                                        self.train_params['hl_size_idx'] = saved_params['hl_size_idx']
+                                    if 'hl_count' in saved_params:
+                                        self.train_params['hl_count'] = saved_params['hl_count']
+                                    if 'height_penalty' in saved_params:
+                                        self.train_params['height_penalty'] = saved_params['height_penalty']
+                                    if 'overhang_penalty' in saved_params:
+                                        self.train_params['overhang_penalty'] = saved_params['overhang_penalty']
+                                    if 'max_size' in saved_params:
+                                        self.train_params['max_size'] = saved_params['max_size']
+                                    if 'visual_mode' in saved_params:
+                                        self.train_params['visual_mode'] = saved_params['visual_mode']
+                                    print("Loaded saved model architecture for sliders.")
+                                except Exception as e:
+                                    print(f"Could not load saved architecture: {e}")
                             self.state = "TRAIN_MENU"
+                            # Stop music if visual mode is off (from saved params or default)
+                            if not self.train_params['visual_mode']:
+                                self.audio.stop()
                         elif self.btn_watch_rect and self.btn_watch_rect.collidepoint(mouse_pos):
                             if self.include_pentominoes or self.include_tetrominoes or self.include_ominis:
                                 self.reset()
+                                # Initialize agent for watching
+                                # We need some default params for the agent structure
+                                # Let's use the current train_params
+                                self.agent = DQNAgent(self.train_params)
+                                import os
+                                if os.path.exists("ominis_model.pth"):
+                                    try:
+                                        self.agent.load("ominis_model.pth")
+                                        print("Loaded model for watching.")
+                                    except Exception as e:
+                                        print(f"Failed to load model for watching: {e}")
+                                
                                 self.state = "WATCH_AI"
 
             elif self.state == "TRAIN_MENU":
@@ -207,7 +258,18 @@ class Game:
                         elif self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
                             self.reset()
                             self.agent = DQNAgent(self.train_params)
+                            # Try to load existing model
+                            import os
+                            if os.path.exists("ominis_model.pth"):
+                                try:
+                                    self.agent.load("ominis_model.pth")
+                                    print("Loaded existing model.")
+                                except Exception as e:
+                                    print(f"Failed to load model: {e}")
+                            
                             self.state = "TRAINING"
+                            if not self.train_params['visual_mode']:
+                                self.audio.stop() # No music in headless
                         
                         # Check sliders
                         for name, rect in self.train_slider_rects.items():
@@ -230,7 +292,7 @@ class Game:
                             self.state = "MENU"
                             self.audio.stop()
 
-            if self.state == "PLAYING" or self.state == "PAUSED" or self.state == "GAMEOVER" or self.state == "TRAINING":
+            elif self.state == "PLAYING" or self.state == "PAUSED" or self.state == "GAMEOVER" or self.state == "TRAINING":
                  if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if self.btn_quit_rect and self.btn_quit_rect.collidepoint(event.pos):
@@ -238,13 +300,28 @@ class Game:
                             self.audio.stop()
                         elif self.state == "TRAINING" and self.train_chk_rect and self.train_chk_rect.collidepoint(event.pos):
                             self.train_params['visual_mode'] = not self.train_params['visual_mode']
-
-            if self.state == "PLAYING" or self.state == "PAUSED" or self.state == "WATCH_AI" or self.state == "GAMEOVER" or self.state == "TRAINING":
-                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1:
-                        if self.slider_rect and self.slider_rect.collidepoint(event.pos):
-                            self.dragging_slider = True
-                            self.update_volume(event.pos[0])
+                            if not self.train_params['visual_mode']:
+                                self.audio.stop()
+                                print("Visual mode OFF - Audio stopped")
+                            else:
+                                self.audio.start()
+                                print("Visual mode ON - Audio started")
+                        elif self.state == "TRAINING" and self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
+                            # STOP button pressed
+                            if self.agent:
+                                self.agent.save("ominis_model.pth")
+                                print("Model saved.")
+                            self.state = "TRAIN_MENU"
+                            # Stop music when returning to Train Menu
+                            self.audio.stop()
+                        elif self.state == "TRAINING" and self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
+                            # BACK button pressed
+                            if self.agent:
+                                self.agent.save("ominis_model.pth")
+                                print("Model saved.")
+                            self.state = "MENU"
+                            # Main menu has no music
+                            self.audio.stop()
                  elif event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 1:
                         self.dragging_slider = False
@@ -323,12 +400,20 @@ class Game:
                 lines_to_clear.append(y)
         
         if lines_to_clear:
-            self.clearing_lines = lines_to_clear
-            self.pre_anim_state = self.state # Save state to return to
-            self.state = "ANIMATING_CLEAR"
-            self.animation_timer = pygame.time.get_ticks()
-            self.audio.play_clear()
-            return True
+            # In headless training mode, skip animation and sound
+            if self.state == "TRAINING" and not self.train_params['visual_mode']:
+                # Directly apply clears without animation
+                self.clearing_lines = lines_to_clear
+                self.apply_line_clears()
+                return True
+            else:
+                # Normal animation flow
+                self.clearing_lines = lines_to_clear
+                self.pre_anim_state = self.state # Save state to return to
+                self.state = "ANIMATING_CLEAR"
+                self.animation_timer = pygame.time.get_ticks()
+                self.audio.play_clear()
+                return True
         return False
 
     def apply_line_clears(self):
@@ -543,6 +628,9 @@ class Game:
         
         if done:
             self.reset() # Auto-restart during training
+            self.state = "TRAINING"
+            if not self.train_params['visual_mode']:
+                self.audio.stop()
 
     def update(self):
         current_time = pygame.time.get_ticks()
@@ -568,15 +656,23 @@ class Game:
 
         elif self.state == "TRAINING":
             if self.train_params['visual_mode']:
-                # Visual Mode: Sync with fall speed
-                if current_time - self.fall_time > self.fall_speed:
+                # Visual Mode: Run at specific speed (e.g. 250ms)
+                # User said: "screen shows the agent playing at some speed... Perhaps 250ms per piece advance"
+                # Wait, "per piece advance" usually means per step (gravity).
+                train_speed = 250 # ms
+                if current_time - self.fall_time > train_speed:
                     self.step_ai_training()
                     self.fall_time = current_time
             else:
-                # Headless Mode: Run as fast as possible (called every frame)
-                # We might want to run multiple steps per frame if possible, 
-                # but for now one step per frame (uncapped FPS) is good.
-                self.step_ai_training()
+                # Headless Mode: Run as fast as possible within a time budget
+                # Keep UI responsive (10 FPS target -> ~100ms per frame)
+                # Let's use ~100ms for training, leaving time for draw/events.
+                
+                start_train = pygame.time.get_ticks()
+                while pygame.time.get_ticks() - start_train < 100:
+                    self.step_ai_training()
+                    # Break if we've done too many to prevent infinite loops if clock is weird
+                    # (Optional safety)
                 
         elif self.state == "ANIMATING_CLEAR":
             if current_time - self.animation_timer > 200: # 200ms flash
@@ -650,8 +746,41 @@ class Game:
             self.btn_watch_rect = self.ui.draw_button(self.screen_width // 2 - 100, 520, 200, 50, "WATCH AI PLAY", active, mouse_pos)
             self.btn_train_rect = self.ui.draw_button(self.screen_width // 2 - 100, 590, 200, 50, "TRAIN AI", True, mouse_pos)
             
-        elif self.state == "TRAIN_MENU":
-            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.train_slider_rects = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, self.grid)
+        elif self.state == "TRAIN_MENU" or self.state == "TRAINING" or (self.state in ["ANIMATING_CLEAR", "ANIMATING_DROP"] and hasattr(self, 'pre_anim_state') and self.pre_anim_state == "TRAINING"):
+            # In TRAINING, we still want to show the menu controls, but maybe disable some?
+            # User said "left panel should retain the Train AI controls".
+            # So we use the same draw function.
+            # But we need to make sure the game board is drawn with the current state.
+            
+            # If Headless (visual_mode=False), we might not want to draw the board updates every frame?
+            # User said: "If visual mode is not selected, the game board stays blank"
+            # So we pass a dummy grid or just don't draw the grid content in draw_train_menu if headless?
+            # Actually, draw_train_menu calls draw_grid.
+            
+            # Let's handle the "Blank Board" logic in ui.py or here by passing a clean grid if headless.
+            display_grid = self.grid
+            if self.state == "TRAINING" and not self.train_params['visual_mode']:
+                # Create a dummy empty grid for display
+                display_grid = Grid(self.grid_width, self.grid_height, self.cell_size)
+            
+            is_training = (self.state == "TRAINING" or (self.state in ["ANIMATING_CLEAR", "ANIMATING_DROP"] and hasattr(self, 'pre_anim_state') and self.pre_anim_state == "TRAINING"))
+            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.train_slider_rects = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, display_grid, is_training=is_training)
+            
+            # If TRAINING, we also need to draw the falling piece if Visual Mode is ON
+            if is_training and self.train_params['visual_mode']:
+                 # We need to manually draw the piece on top because draw_train_menu draws the grid background/locked blocks
+                 # But draw_train_menu calls draw_grid which clips.
+                 # We need to calculate offsets again.
+                 # draw_train_menu uses:
+                 # offset_x = left_pane_width + padding * 2
+                 # offset_y = padding + 5
+                 # left_pane_width = 210
+                 padding = 20
+                 offset_x = 210 + padding * 2
+                 offset_y = padding + 5
+                 
+                 if self.current_piece:
+                     self.ui.draw_pentomino(self.current_piece, offset_x, offset_y, self.cell_size)
             
         else:
             # Standard Padding
@@ -717,13 +846,9 @@ class Game:
                 self.btn_back_rect = self.ui.draw_button(left_pane_x + 30, btn_y, 150, 40, "BACK", True, mouse_pos)
             
             # Quit Button for Playing
-            # Show if PLAYING or (PAUSED and NOT from WATCH_AI) or (GAMEOVER and NOT from WATCH_AI) or TRAINING
-            elif self.state == "PLAYING" or (self.state == "PAUSED" and (not hasattr(self, 'last_state') or self.last_state != "WATCH_AI")) or (self.state == "GAMEOVER" and (not hasattr(self, 'last_state') or self.last_state != "WATCH_AI")) or self.state == "TRAINING":
+            # Show if PLAYING or (PAUSED and NOT from WATCH_AI) or (GAMEOVER and NOT from WATCH_AI)
+            elif self.state == "PLAYING" or (self.state == "PAUSED" and (not hasattr(self, 'last_state') or self.last_state != "WATCH_AI")) or (self.state == "GAMEOVER" and (not hasattr(self, 'last_state') or self.last_state != "WATCH_AI")):
                 self.btn_quit_rect = self.ui.draw_button(left_pane_x + 30, btn_y, 150, 40, "QUIT GAME", True, mouse_pos)
-                
-                if self.state == "TRAINING":
-                     # Draw Checkbox above Quit button
-                     self.train_chk_rect = self.ui.draw_checkbox(left_pane_x + 30, btn_y - 40, self.train_params['visual_mode'], "Visual Mode", mouse_pos)
             
             # Calculate grid rect for overlays
             grid_rect_x = offset_x
@@ -772,8 +897,8 @@ class Game:
             raw = int(val * 100)
             self.train_params['overhang_penalty'] = round(raw / 10) * 10
         elif self.active_slider == 'max_size':
-            # Map 0-1 to 2, 3, 4, 5
-            size = 2 + int(val * 3.99)
+            # Map 0-1 to 1, 2, 3, 4, 5
+            size = 1 + int(val * 4.99)
             self.train_params['max_size'] = size
 
     def run(self):
@@ -785,12 +910,9 @@ class Game:
             
             if self.state == "TRAINING" and not self.train_params['visual_mode']:
                 # Headless Mode
-                headless_frame_count += 1
-                if headless_frame_count % 60 == 0: # Draw every 60 frames (approx 1 sec if running at 60fps, but here it's uncapped)
-                    self.draw()
-                    pygame.display.flip() # Ensure flip happens
-                
-                self.clock.tick(0) # Uncapped FPS
+                # Still draw every frame to keep UI responsive
+                self.draw()
+                self.clock.tick(60) # Cap at 60 FPS so we don't burn CPU just drawing UI
             else:
                 self.draw()
                 self.clock.tick(60)

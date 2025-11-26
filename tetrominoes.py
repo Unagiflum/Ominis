@@ -80,6 +80,7 @@ SHAPES = {
     'Domino': [(0, 0), (0, 1)],
     'Triomino_I': [(0, -1), (0, 0), (0, 1)],
     'Triomino_L': [(0, 0), (0, 1), (1, 0)],
+    'Monomino': [(0, 0)],
 }
 
 # Shape to Color mapping (explicit to avoid index issues)
@@ -112,6 +113,7 @@ SHAPE_COLORS = {
     'Domino': (200, 200, 200),   # Silver
     'Triomino_I': (255, 215, 0), # Gold
     'Triomino_L': (255, 140, 0), # Dark Orange
+    'Monomino': (192, 192, 192), # Silver/Gray
 }
 
 def get_allowed_shapes(include_pentominoes=True, include_tetrominoes=False, include_ominis=False, max_size=5):

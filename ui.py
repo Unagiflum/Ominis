@@ -7,6 +7,7 @@ class UI:
         self.screen = screen
         # Use Consolas for digital look
         self.font = pygame.font.SysFont("Consolas", 20, bold=True)
+        self.small_font = pygame.font.SysFont("Consolas", 14, bold=True)
         self.large_font = pygame.font.SysFont("Consolas", 40, bold=True)
         self.score_font = pygame.font.SysFont("Consolas", 28, bold=True)
         
@@ -253,12 +254,12 @@ class UI:
                 
             current_y += line_height
 
-    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid):
+    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False):
         self.draw_background()
         
         # Standard Padding
         padding = 20
-        left_pane_width = 350 # Wider for sliders
+        left_pane_width = 210 # Standard width (same as score/preview)
         
         # Title
         title = self.large_font.render("TRAIN AI", True, self.text_color)
@@ -271,28 +272,23 @@ class UI:
         self.draw_group_box(padding, current_y, left_pane_width, arch_height, "Architecture")
         
         # Hidden Layer Size (128, 256, 512)
-        # Map 0.0-1.0 to index 0-2
         hl_sizes = [128, 256, 512]
         hl_size_idx = int(params['hl_size_idx'])
         hl_size_val = hl_sizes[hl_size_idx]
         
-        # Slider logic handled in Game, here we just draw based on param 0.0-1.0 equivalent
-        # But params passed are likely the actual values or indices? 
-        # Let's assume params is a dict of values, and we might need rects for interaction.
-        # Actually, for sliders, we need to return rects so Game can update them.
-        
-        # Let's define the slider rects here and return them in a dict
         slider_rects = {}
+        slider_width = 170
+        slider_x = padding + (left_pane_width - slider_width) // 2
         
         sy = current_y + 40
         # Hidden Layer Size
-        s_rect = self.draw_slider(padding + 20, sy, 200, params['hl_size_idx'] / 2.0, f"Hidden Size: {hl_size_val}", mouse_pos)
-        slider_rects['hl_size'] = s_rect
+        s_rect = self.draw_slider(slider_x, sy, slider_width, params['hl_size_idx'] / 2.0, f"Hidden Size: {hl_size_val}", mouse_pos, self.small_font)
+        if not is_training: slider_rects['hl_size'] = s_rect
         sy += 50
         
         # Hidden Layer Count (1, 2, 3, 4)
-        s_rect = self.draw_slider(padding + 20, sy, 200, (params['hl_count'] - 1) / 3.0, f"Hidden Layers: {params['hl_count']}", mouse_pos)
-        slider_rects['hl_count'] = s_rect
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (params['hl_count'] - 1) / 3.0, f"Hidden Layers: {params['hl_count']}", mouse_pos, self.small_font)
+        if not is_training: slider_rects['hl_count'] = s_rect
         
         current_y += arch_height + 20
         
@@ -302,19 +298,19 @@ class UI:
         
         sy = current_y + 40
         # Height Penalty
-        s_rect = self.draw_slider(padding + 20, sy, 200, params['height_penalty'] / 100.0, f"Height Penalty: {params['height_penalty']}%", mouse_pos)
-        slider_rects['height_penalty'] = s_rect
+        s_rect = self.draw_slider(slider_x, sy, slider_width, params['height_penalty'] / 100.0, f"Height Penalty: {params['height_penalty']}%", mouse_pos, self.small_font)
+        if not is_training: slider_rects['height_penalty'] = s_rect
         sy += 50
         
         # Overhang Penalty
-        s_rect = self.draw_slider(padding + 20, sy, 200, params['overhang_penalty'] / 100.0, f"Overhang Penalty: {params['overhang_penalty']}%", mouse_pos)
-        slider_rects['overhang_penalty'] = s_rect
+        s_rect = self.draw_slider(slider_x, sy, slider_width, params['overhang_penalty'] / 100.0, f"Overhang Penalty: {params['overhang_penalty']}%", mouse_pos, self.small_font)
+        if not is_training: slider_rects['overhang_penalty'] = s_rect
         sy += 50
         
-        # Max Polyomino Size (2, 3, 4, 5)
-        # Map 0.0-1.0 to 2-5
-        s_rect = self.draw_slider(padding + 20, sy, 200, (params['max_size'] - 2) / 3.0, f"Max Piece Size: {params['max_size']}", mouse_pos)
-        slider_rects['max_size'] = s_rect
+        # Max Polyomino Size (1, 2, 3, 4, 5)
+        # Range 1-5, span 4.
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (params['max_size'] - 1) / 4.0, f"Max Piece Size: {params['max_size']}", mouse_pos, self.small_font)
+        if not is_training: slider_rects['max_size'] = s_rect
         
         
         # Bottom Controls
@@ -324,8 +320,9 @@ class UI:
         btn_back_rect = self.draw_button(padding, bottom_y, 150, 40, "BACK", True, mouse_pos)
         bottom_y -= 50
         
-        # Start Button
-        btn_start_rect = self.draw_button(padding, bottom_y, 150, 40, "START", True, mouse_pos)
+        # Start/Stop Button
+        label = "STOP" if is_training else "START"
+        btn_start_rect = self.draw_button(padding, bottom_y, 150, 40, label, True, mouse_pos)
         bottom_y -= 50
         
         # Visual Mode Checkbox
@@ -345,9 +342,9 @@ class UI:
         pygame.draw.rect(self.screen, self.border_color, rect, 2, border_radius=8)
         
         # Title on top border
-        title_surf = self.font.render(f" {title} ", True, self.accent_color)
+        title_surf = self.small_font.render(f" {title} ", True, self.accent_color)
         # Clear background behind title
-        title_rect = title_surf.get_rect(topleft=(x + 20, y - 10))
+        title_rect = title_surf.get_rect(topleft=(x + 10, y - 8))
         pygame.draw.rect(self.screen, self.bg_color, title_rect)
         self.screen.blit(title_surf, title_rect)
 
@@ -424,9 +421,11 @@ class UI:
         
         return rect
 
-    def draw_slider(self, x, y, width, value, label, mouse_pos=None):
+    def draw_slider(self, x, y, width, value, label, mouse_pos=None, font=None):
+        if font is None:
+            font = self.font
         # Label
-        text = self.font.render(label, True, self.text_color)
+        text = font.render(label, True, self.text_color)
         self.screen.blit(text, (x + width//2 - text.get_width()//2, y - 25))
         
         # Bar
