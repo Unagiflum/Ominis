@@ -254,7 +254,7 @@ class UI:
                 
             current_y += line_height
 
-    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False):
+    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False, volume=0.5):
         self.draw_background()
         
         # Standard Padding
@@ -327,6 +327,12 @@ class UI:
         
         # Visual Mode Checkbox
         chk_rect = self.draw_checkbox(padding, bottom_y, params['visual_mode'], "Visual Mode", mouse_pos)
+        bottom_y -= 50
+
+        # Volume Slider
+        # Only relevant if visual mode is on? Or always show? User said "need not do anything when visual mode is off".
+        # Let's show it always for consistency.
+        vol_slider_rect = self.draw_slider(padding + 10, bottom_y, 150, volume, "Volume", mouse_pos, self.small_font)
         
         # Draw Game Board on Right
         offset_x = left_pane_width + padding * 2
@@ -334,7 +340,7 @@ class UI:
         
         self.draw_grid(grid, offset_x, offset_y)
         
-        return btn_back_rect, chk_rect, btn_start_rect, slider_rects
+        return btn_back_rect, chk_rect, btn_start_rect, slider_rects, vol_slider_rect
 
     def draw_group_box(self, x, y, width, height, title):
         rect = pygame.Rect(x, y, width, height)

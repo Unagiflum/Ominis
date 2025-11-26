@@ -57,6 +57,7 @@ class Game:
         self.train_visual_mode = True
         self.btn_quit_rect = None
         self.slider_rect = None
+        self.train_slider_rect = None
         self.dragging_slider = False
         
         # Training Parameters
@@ -331,14 +332,21 @@ class Game:
                             if rect.collidepoint(event.pos):
                                 self.active_slider = name
                                 self.update_train_slider(event.pos[0])
+                        
+                        if self.train_slider_rect and self.train_slider_rect.collidepoint(event.pos):
+                            self.dragging_slider = True
+                            self.update_volume(event.pos[0], is_train_slider=True)
                                 
                 elif event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 1:
                         self.active_slider = None
+                        self.dragging_slider = False
                         
                 elif event.type == pygame.MOUSEMOTION:
                     if self.active_slider:
                         self.update_train_slider(event.pos[0])
+                    elif self.dragging_slider:
+                        self.update_volume(event.pos[0], is_train_slider=True)
 
             elif self.state == "WATCH_AI" or (self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI") or (self.state == "GAMEOVER" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI"):
                  if event.type == pygame.MOUSEBUTTONDOWN:
@@ -346,6 +354,15 @@ class Game:
                         if self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
                             self.state = "MENU"
                             self.audio.stop()
+                        elif self.slider_rect and self.slider_rect.collidepoint(event.pos):
+                            self.dragging_slider = True
+                            self.update_volume(event.pos[0])
+                 elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:
+                        self.dragging_slider = False
+                 elif event.type == pygame.MOUSEMOTION:
+                    if self.dragging_slider:
+                        self.update_volume(event.pos[0])
 
             elif self.state == "PLAYING" or self.state == "PAUSED" or self.state == "GAMEOVER" or self.state == "TRAINING":
                  if event.type == pygame.MOUSEBUTTONDOWN:
@@ -379,12 +396,18 @@ class Game:
                             self.state = "MENU"
                             # Main menu has no music
                             self.audio.stop()
+                        elif self.state != "TRAINING" and self.slider_rect and self.slider_rect.collidepoint(event.pos):
+                            self.dragging_slider = True
+                            self.update_volume(event.pos[0])
+                        elif self.state == "TRAINING" and self.train_slider_rect and self.train_slider_rect.collidepoint(event.pos):
+                            self.dragging_slider = True
+                            self.update_volume(event.pos[0], is_train_slider=True)
                  elif event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 1:
                         self.dragging_slider = False
                  elif event.type == pygame.MOUSEMOTION:
                     if self.dragging_slider:
-                        self.update_volume(event.pos[0])
+                        self.update_volume(event.pos[0], is_train_slider=(self.state == "TRAINING"))
                         
             if self.state == "GAMEOVER":
                 pass # No special input for now, just buttons above
@@ -892,7 +915,7 @@ class Game:
                 display_grid = Grid(self.grid_width, self.grid_height, self.cell_size)
             
             is_training = (self.state == "TRAINING" or (self.state in ["ANIMATING_CLEAR", "ANIMATING_DROP"] and hasattr(self, 'pre_anim_state') and self.pre_anim_state == "TRAINING"))
-            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.train_slider_rects = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, display_grid, is_training=is_training)
+            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.train_slider_rects, self.train_slider_rect = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, display_grid, is_training=is_training, volume=self.volume)
             
             # If TRAINING, we also need to draw the falling piece if Visual Mode is ON
             if is_training and self.train_params['visual_mode']:
@@ -992,11 +1015,12 @@ class Game:
         
         pygame.display.flip()
 
-    def update_volume(self, mouse_x):
-        if self.slider_rect:
+    def update_volume(self, mouse_x, is_train_slider=False):
+        rect = self.train_slider_rect if is_train_slider else self.slider_rect
+        if rect:
             # Calculate volume from mouse position relative to slider
-            rel_x = mouse_x - self.slider_rect.x
-            vol = rel_x / self.slider_rect.width
+            rel_x = mouse_x - rect.x
+            vol = rel_x / rect.width
             self.volume = max(0.0, min(1.0, vol))
             self.audio.set_volume(self.volume)
 
