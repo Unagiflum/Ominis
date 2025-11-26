@@ -27,8 +27,20 @@ class DQNAgent:
         hidden_size = self.HL_SIZES[self.params['hl_size_idx']]
         hidden_count = self.params['hl_count']
         
+        # Main network (updated every training step)
         self.model = OminisNet(hidden_size=hidden_size, hidden_count=hidden_count).to(self.device)
+        
+        # Target network (updated periodically for stable targets)
+        self.target_model = OminisNet(hidden_size=hidden_size, hidden_count=hidden_count).to(self.device)
+        self.target_model.load_state_dict(self.model.state_dict())
+        self.target_model.eval()  # Always in eval mode
+        
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        
+        # Target network update parameters
+        self.target_update_frequency = 1000  # Hard update every N steps
+        self.tau = 0.005  # Soft update parameter (if using soft updates)
+        self.training_steps = 0
         
         # Action Space
         # Lateral: 0=Left, 1=Stay, 2=Right
@@ -268,12 +280,12 @@ class DQNAgent:
         rewards = torch.FloatTensor(reward_batch).to(self.device)
         dones = torch.FloatTensor(done_batch).to(self.device)
         
-        # Current Q values
+        # Current Q values from main network
         lat_q, rot_q, vert_q = self.model(grid_tensor, next_piece_tensor)
         
-        # Target Q values
+        # Target Q values from stable target network (key change for stability)
         with torch.no_grad():
-            next_lat_q, next_rot_q, next_vert_q = self.model(next_grid_tensor, next_next_piece_tensor)
+            next_lat_q, next_rot_q, next_vert_q = self.target_model(next_grid_tensor, next_next_piece_tensor)
             
         # Update Q values for taken actions
         loss = 0
@@ -310,23 +322,69 @@ class DQNAgent:
             
         self.optimizer.zero_grad()
         loss.backward()
+        
+        # Gradient clipping for stability
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
+        
         self.optimizer.step()
         
+        # Decay epsilon
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
+            
+        # Update target network periodically (hard update)
+        self.training_steps += 1
+        if self.training_steps % self.target_update_frequency == 0:
+            self.update_target_network()
+
+
+
+    def update_target_network(self, soft_update=False):
+        """
+        Update target network weights.
+        
+        Args:
+            soft_update: If True, use soft (gradual) updates with tau.
+                        If False, use hard (complete copy) updates.
+        """
+        if soft_update:
+            # Soft update: θ_target = τ*θ_local + (1 - τ)*θ_target
+            for target_param, param in zip(self.target_model.parameters(), self.model.parameters()):
+                target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
+        else:
+            # Hard update: Complete copy of weights
+            self.target_model.load_state_dict(self.model.state_dict())
 
     def save(self, path):
         torch.save({
             'model_state_dict': self.model.state_dict(),
+            'target_model_state_dict': self.target_model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'epsilon': self.epsilon,
+            'training_steps': self.training_steps,
             'params': self.params
         }, path)
 
     def load(self, path):
         checkpoint = torch.load(path, map_location=self.device)
         self.model.load_state_dict(checkpoint['model_state_dict'])
+        
+        # Load target network if available (backwards compatibility)
+        if 'target_model_state_dict' in checkpoint:
+            self.target_model.load_state_dict(checkpoint['target_model_state_dict'])
+        else:
+            # If loading old model without target network, sync from main model
+            self.target_model.load_state_dict(self.model.state_dict())
+        
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.epsilon = checkpoint['epsilon']
+        
+        # Load training steps if available (backwards compatibility)
+        if 'training_steps' in checkpoint:
+            self.training_steps = checkpoint['training_steps']
+        else:
+            self.training_steps = 0
+        
         # We don't overwrite params from file, we use the current UI params
         # But we could check if they match? For now, trust the UI.
+
