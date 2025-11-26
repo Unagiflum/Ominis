@@ -75,8 +75,29 @@ class Game:
         self.das_delay = 200 # ms before repeat starts
         self.das_repeat = 50 # ms between repeats
         self.left_held_time = 0
+        self.left_held_time = 0
         self.agent = None
         self.training_step_count = 0
+        self.current_trajectory = [] # Buffer for trajectory-based training
+        self.start_stats = (0, 0) # (Height, Holes) at start of piece
+
+    def get_grid_stats(self):
+        """Returns (max_height, holes) for the current grid."""
+        max_height = 0
+        for y in range(self.grid_height):
+            if any(c != (0,0,0) for c in self.grid.grid[y]):
+                max_height = self.grid_height - y
+                break
+        
+        holes = 0
+        for x in range(self.grid_width):
+            found_block = False
+            for y in range(self.grid_height):
+                if self.grid.grid[y][x] != (0,0,0):
+                    found_block = True
+                elif found_block:
+                    holes += 1
+        return max_height, holes
 
     def spawn_piece(self):
         p = Pentomino(self.grid_width // 2, 0, self.allowed_shapes)
@@ -111,6 +132,7 @@ class Game:
         if not self.allowed_shapes:
              self.allowed_shapes = get_allowed_shapes(True, False, False)
         self.current_piece = self.spawn_piece()
+        self.start_stats = self.get_grid_stats()
         self.next_piece = self.spawn_piece()
         
         # Only set to PLAYING if not already in TRAINING (to avoid overwriting state during training reset)
@@ -405,7 +427,7 @@ class Game:
                 # Directly apply clears without animation
                 self.clearing_lines = lines_to_clear
                 self.apply_line_clears()
-                return True
+                return False # Return False so game_tick proceeds to spawn new piece
             else:
                 # Normal animation flow
                 self.clearing_lines = lines_to_clear
@@ -498,6 +520,7 @@ class Game:
                     pass # State changed to ANIMATING_CLEAR
                 else:
                     self.current_piece = self.next_piece
+                    self.start_stats = self.get_grid_stats()
                     self.next_piece = self.spawn_piece()
                     if self.grid.check_collision(self.current_piece):
                         self.state = "GAMEOVER"
@@ -592,18 +615,9 @@ class Game:
         if vert_idx == 0: moves.append("DOWN")
         
         # 3. Execute Moves (and advance tick)
-        # We need to track lines cleared and game over status
-        # Reset these counters before step
-        self.lines_cleared_this_step = 0
-        # Check game over after step
-        
-        # Execute moves logic (similar to step_ai but we need to capture results)
-        # For simplicity, let's reuse step_ai logic but we need to know if lines were cleared.
-        # We can check self.lines_cleared_total before and after?
-        # Or hook into update_score?
-        
+        # We need to track if the piece was locked/placed during this step.
+        piece_before = self.current_piece
         lines_before = self.lines_cleared_total
-        score_before = self.score
         
         # Execute the moves
         self.step_ai(moves)
@@ -614,23 +628,76 @@ class Game:
         # Check Game Over
         done = (self.state == "GAMEOVER")
         
+        # Check if piece was locked
+        # Piece is locked if:
+        # 1. Lines were cleared (implies lock)
+        # 2. Game Over (implies lock)
+        # 3. Current piece object changed (implies lock and spawn new)
+        # 4. State changed to ANIMATING_CLEAR (Visual mode lock)
+        
+        if self.state == "ANIMATING_CLEAR":
+            lines_cleared = len(self.clearing_lines)
+            piece_locked = True
+        else:
+            piece_locked = (lines_cleared > 0) or done or (self.current_piece != piece_before)
+        
         # 4. Get New State
         next_state = self.agent.get_state(self)
         
-        # 5. Calculate Reward
-        reward = self.agent.calculate_reward(self, lines_cleared, done)
+        # 5. Buffer Step
+        # We store (state, action, next_state)
+        # We don't calculate reward yet.
+        self.current_trajectory.append((state, action, next_state))
         
-        # 6. Remember
-        self.agent.remember(state, action, reward, next_state, done)
-        
-        # 7. Replay (Train)
-        self.agent.replay()
+        # 6. If Piece Locked, Distribute Reward and Train
+        if piece_locked:
+            # Calculate Final Reward for this placement
+            final_reward = self.agent.calculate_reward(self, lines_cleared, done, self.start_stats)
+            
+            # Add trajectory to memory with this reward
+            self.agent.add_trajectory_with_done(self.current_trajectory, final_reward, done)
+            
+            # Clear trajectory
+            self.current_trajectory = []
+            
+            # Replay (Train)
+            self.agent.replay()
         
         if done:
             self.state = "TRAINING" # Restore state BEFORE reset so it knows to use training params
             self.reset() # Auto-restart during training
             if not self.train_params['visual_mode']:
                 self.audio.stop()
+
+    def step_ai_watch(self):
+        """Executes AI moves for watching mode (no training)."""
+        if not self.agent or not self.current_piece:
+            return
+
+        # 1. Get Current State
+        state = self.agent.get_state(self)
+        
+        # 2. Select Action (No epsilon exploration usually, but agent handles it)
+        # We might want to force epsilon=0 for watching?
+        old_eps = self.agent.epsilon
+        self.agent.epsilon = 0 # Force greedy
+        action = self.agent.select_action(state)
+        self.agent.epsilon = old_eps
+        
+        lat_idx, rot_idx, vert_idx = action
+        
+        # Map indices to moves
+        moves = []
+        if lat_idx == 0: moves.append("LEFT")
+        elif lat_idx == 2: moves.append("RIGHT")
+        
+        if rot_idx == 0: moves.append("ROTATE_CCW")
+        elif rot_idx == 2: moves.append("ROTATE_CW")
+        
+        if vert_idx == 0: moves.append("DOWN")
+        
+        # 3. Execute Moves
+        self.step_ai(moves)
 
     def update(self):
         current_time = pygame.time.get_ticks()
@@ -653,6 +720,13 @@ class Game:
             if current_time - self.fall_time > current_fall_speed:
                 self.game_tick()
                 self.fall_time = current_time
+
+        elif self.state == "WATCH_AI":
+             # AI plays at a readable speed
+             watch_speed = 250 # ms
+             if current_time - self.fall_time > watch_speed:
+                 self.step_ai_watch()
+                 self.fall_time = current_time
 
         elif self.state == "TRAINING":
             if self.train_params['visual_mode']:

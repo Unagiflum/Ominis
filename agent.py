@@ -119,46 +119,115 @@ class DQNAgent:
         
         return [lat, rot, vert]
 
-    def calculate_reward(self, game, lines_cleared, game_over):
+    def calculate_reward(self, game, lines_cleared, game_over, start_stats):
+        # Calculate reward based on the CHANGE in state
         reward = 0
         
-        # 1. Line Clears
+        # 1. Line Clears (Big reward)
         if lines_cleared > 0:
-            # Reward exponential to lines?
             reward += (lines_cleared ** 2) * 100
             
         # 2. Game Over Penalty
         if game_over:
             reward -= 500
             
-        # 3. Height Penalty
-        # Calculate max height
-        max_height = 0
-        for y in range(24):
-            if any(c != (0,0,0) for c in game.grid.grid[y]):
-                max_height = 24 - y
-                break
+        # Get current stats
+        current_height, current_holes = game.get_grid_stats()
+        start_height, start_holes = start_stats
         
-        # Penalty % (0-100) -> Factor 0.0 - 1.0
-        # Let's say max penalty is -10 per block height?
-        h_factor = self.params['height_penalty'] / 100.0
-        reward -= max_height * h_factor * 2
-        
-        # 4. Overhang Penalty
-        # Count holes (empty blocks with filled blocks above them)
-        holes = 0
-        for x in range(12):
-            found_block = False
-            for y in range(24):
-                if game.grid.grid[y][x] != (0,0,0):
-                    found_block = True
-                elif found_block:
-                    holes += 1
-                    
-        o_factor = self.params['overhang_penalty'] / 100.0
-        reward -= holes * o_factor * 5
-        
+        # 3. Height Change
+        # If height increased, penalty.
+        height_change = current_height - start_height
+        if height_change > 0:
+            h_factor = self.params['height_penalty'] / 100.0
+            reward -= height_change * h_factor * 10 # Multiplier for impact
+            
+        # 4. Holes Change
+        # If holes increased, penalty.
+        holes_change = current_holes - start_holes
+        if holes_change > 0:
+            o_factor = self.params['overhang_penalty'] / 100.0
+            reward -= holes_change * o_factor * 20 # Multiplier for impact
+            
         return reward
+
+    def add_trajectory(self, trajectory, final_reward):
+        """
+        trajectory: List of (state, action, next_state) tuples
+        final_reward: The reward calculated at the end of the trajectory
+        """
+        # Distribute reward to all steps
+        # Optional: Discount factor backwards? 
+        # User said "distributed to the entire series". 
+        # Usually this means each step gets the final reward (or discounted).
+        # Let's use a slight discount to encourage faster placement if possible, 
+        # or just flat reward if we want them to value all steps equally.
+        # Let's use gamma decay from the end.
+        
+        current_reward = final_reward
+        
+        # Iterate backwards
+        for i in range(len(trajectory) - 1, -1, -1):
+            state, action, next_state = trajectory[i]
+            
+            # The last step gets the full final_reward.
+            # Previous steps get discounted version?
+            # Actually, standard Q-learning does this via Bellman update.
+            # But here we are assigning the IMMEDIATE reward for the transition.
+            # If we assign the final outcome as the immediate reward for ALL steps,
+            # it's like Monte Carlo return assignment.
+            
+            # Let's assign the final_reward to the LAST step.
+            # And 0 (or small step penalty) to others?
+            # User said "reward is distributed to the entire series".
+            # This might mean: Reward for step i = Final Reward / N ? No, that dilutes it.
+            # It likely means: Each step contributed to this outcome.
+            # Let's give the final_reward to EVERY step.
+            # This tells the AI: "This move led to this good/bad outcome".
+            
+            # However, if we give +100 to every step, the total return is N * 100.
+            # If we have 10 steps, that's huge.
+            # Maybe we should just give it to the last step, and let Q-propagation handle the rest?
+            # BUT, the user specifically asked for "distributed".
+            # "distributed to the entire series of moves, calculating output and prediction at each individual step."
+            
+            # Interpretation: The user wants to avoid the "sparse reward" problem where only the last move sees the reward.
+            # So let's assign the final reward to ALL steps in the trajectory.
+            # This is a form of Reward Shaping.
+            
+            step_reward = final_reward
+            
+            # Mark done only on the last step?
+            # If the game is over, the last step is done.
+            # If just piece placed, it's not "done" for the episode, but it is a terminal state for the piece.
+            # In infinite Tetris, "done" usually means Game Over.
+            # So done=False for all except Game Over.
+            
+            is_last_step = (i == len(trajectory) - 1)
+            # We need to know if the game ended. 
+            # We can infer from final_reward if it's the penalty? No.
+            # We should pass 'done' status.
+            
+            # Let's update the signature to include done.
+            pass
+
+    def add_trajectory_with_done(self, trajectory, final_reward, game_over):
+        for i in range(len(trajectory)):
+            state, action, next_state = trajectory[i]
+            
+            # Assign final reward to all steps
+            # Maybe slightly discounted by distance to end?
+            # reward = final_reward * (self.gamma ** (len(trajectory) - 1 - i))
+            # Let's try flat reward first as it's more robust for "this sequence was good".
+            
+            reward = final_reward
+            
+            # Only the very last step of the GAME has done=True.
+            # Intermediate piece placements have done=False.
+            is_terminal = game_over if (i == len(trajectory) - 1) else False
+            
+            self.remember(state, action, reward, next_state, is_terminal)
+
 
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
