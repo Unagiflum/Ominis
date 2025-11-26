@@ -80,6 +80,47 @@ class Game:
         self.training_step_count = 0
         self.current_trajectory = [] # Buffer for trajectory-based training
         self.start_stats = (0, 0) # (Height, Holes) at start of piece
+        
+        self.load_settings()
+
+    def get_model_filename(self):
+        """Generates filename based on current architecture params."""
+        # We need the sizes from Agent or define them here.
+        # Let's define them here to match Agent.
+        hl_sizes = [128, 256, 512]
+        size = hl_sizes[self.train_params['hl_size_idx']]
+        count = self.train_params['hl_count']
+        
+        # Ensure models dir exists
+        import os
+        if not os.path.exists("models"):
+            os.makedirs("models")
+            
+        return os.path.join("models", f"model-{size}-{count}.pth")
+
+    def load_settings(self):
+        import json
+        import os
+        if os.path.exists("settings.json"):
+            try:
+                with open("settings.json", "r") as f:
+                    saved_params = json.load(f)
+                    # Update params
+                    for k, v in saved_params.items():
+                        if k in self.train_params:
+                            self.train_params[k] = v
+                print("Loaded settings from settings.json")
+            except Exception as e:
+                print(f"Failed to load settings: {e}")
+
+    def save_settings(self):
+        import json
+        try:
+            with open("settings.json", "w") as f:
+                json.dump(self.train_params, f)
+            print("Saved settings to settings.json")
+        except Exception as e:
+            print(f"Failed to save settings: {e}")
 
     def get_grid_stats(self):
         """Returns (max_height, holes) for the current grid."""
@@ -205,8 +246,9 @@ class Game:
             
             if action == "EXIT":
                 if self.state == "TRAINING" and self.agent:
-                    self.agent.save("ominis_model.pth")
-                    print("Model saved (ESC).")
+                    self.agent.save(self.get_model_filename())
+                    print(f"Model saved ({self.get_model_filename()}).")
+                    self.save_settings()
 
                 if self.state == "PLAYING" or self.state == "GAMEOVER" or self.state == "WATCH_AI" or self.state == "TRAIN_MENU" or self.state == "TRAINING":
                     self.state = "MENU"
@@ -226,29 +268,7 @@ class Game:
                             if self.include_pentominoes or self.include_tetrominoes or self.include_ominis:
                                 self.reset()
                         elif self.btn_train_rect and self.btn_train_rect.collidepoint(mouse_pos):
-                            # Load saved model architecture if it exists
-                            import os
-                            import torch
-                            if os.path.exists("ominis_model.pth"):
-                                try:
-                                    checkpoint = torch.load("ominis_model.pth", map_location="cpu")
-                                    saved_params = checkpoint.get('params', {})
-                                    # Update sliders to match saved architecture
-                                    if 'hl_size_idx' in saved_params:
-                                        self.train_params['hl_size_idx'] = saved_params['hl_size_idx']
-                                    if 'hl_count' in saved_params:
-                                        self.train_params['hl_count'] = saved_params['hl_count']
-                                    if 'height_penalty' in saved_params:
-                                        self.train_params['height_penalty'] = saved_params['height_penalty']
-                                    if 'overhang_penalty' in saved_params:
-                                        self.train_params['overhang_penalty'] = saved_params['overhang_penalty']
-                                    if 'max_size' in saved_params:
-                                        self.train_params['max_size'] = saved_params['max_size']
-                                    if 'visual_mode' in saved_params:
-                                        self.train_params['visual_mode'] = saved_params['visual_mode']
-                                    print("Loaded saved model architecture for sliders.")
-                                except Exception as e:
-                                    print(f"Could not load saved architecture: {e}")
+                            # Settings are already loaded in __init__
                             self.state = "TRAIN_MENU"
                             # Stop music if visual mode is off (from saved params or default)
                             if not self.train_params['visual_mode']:
@@ -260,11 +280,15 @@ class Game:
                                 # We need some default params for the agent structure
                                 # Let's use the current train_params
                                 self.agent = DQNAgent(self.train_params)
+                                self.agent = DQNAgent(self.train_params)
                                 import os
-                                if os.path.exists("ominis_model.pth"):
+                                model_file = self.get_model_filename()
+                                if os.path.exists(model_file):
                                     try:
-                                        self.agent.load("ominis_model.pth")
-                                        print("Loaded model for watching.")
+                                        self.agent.load(model_file)
+                                        print(f"Loaded model {model_file} for watching.")
+                                    except Exception as e:
+                                        print(f"Failed to load model {model_file}: {e}")
                                     except Exception as e:
                                         print(f"Failed to load model for watching: {e}")
                                 
@@ -281,13 +305,20 @@ class Game:
                             self.reset()
                             self.agent = DQNAgent(self.train_params)
                             # Try to load existing model
+                            self.agent = DQNAgent(self.train_params)
+                            # Try to load existing model
                             import os
-                            if os.path.exists("ominis_model.pth"):
+                            model_file = self.get_model_filename()
+                            if os.path.exists(model_file):
                                 try:
-                                    self.agent.load("ominis_model.pth")
-                                    print("Loaded existing model.")
+                                    self.agent.load(model_file)
+                                    print(f"Loaded existing model {model_file}.")
                                 except Exception as e:
-                                    print(f"Failed to load model: {e}")
+                                    print(f"Failed to load model {model_file}: {e}")
+                            else:
+                                print(f"No existing model found for {model_file}, starting fresh.")
+                            
+                            self.save_settings()
                             
                             self.state = "TRAINING"
                             if not self.train_params['visual_mode']:
@@ -331,16 +362,18 @@ class Game:
                         elif self.state == "TRAINING" and self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
                             # STOP button pressed
                             if self.agent:
-                                self.agent.save("ominis_model.pth")
-                                print("Model saved.")
+                                self.agent.save(self.get_model_filename())
+                                print(f"Model saved ({self.get_model_filename()}).")
+                                self.save_settings()
                             self.state = "TRAIN_MENU"
                             # Stop music when returning to Train Menu
                             self.audio.stop()
                         elif self.state == "TRAINING" and self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
                             # BACK button pressed
                             if self.agent:
-                                self.agent.save("ominis_model.pth")
-                                print("Model saved.")
+                                self.agent.save(self.get_model_filename())
+                                print(f"Model saved ({self.get_model_filename()}).")
+                                self.save_settings()
                             self.state = "MENU"
                             # Main menu has no music
                             self.audio.stop()
@@ -619,6 +652,16 @@ class Game:
         piece_before = self.current_piece
         lines_before = self.lines_cleared_total
         
+        # Check if piece is in upper half BEFORE locking
+        half_height = self.grid_height // 2
+        piece_in_upper_half = False
+        if piece_before:
+            for x, y in piece_before.shape:
+                abs_y = piece_before.y + y
+                if abs_y < half_height:
+                    piece_in_upper_half = True
+                    break
+        
         # Execute the moves
         self.step_ai(moves)
         
@@ -652,7 +695,7 @@ class Game:
         # 6. If Piece Locked, Distribute Reward and Train
         if piece_locked:
             # Calculate Final Reward for this placement
-            final_reward = self.agent.calculate_reward(self, lines_cleared, done, self.start_stats)
+            final_reward = self.agent.calculate_reward(self, lines_cleared, done, self.start_stats, piece_in_upper_half)
             
             # Add trajectory to memory with this reward
             self.agent.add_trajectory_with_done(self.current_trajectory, final_reward, done)

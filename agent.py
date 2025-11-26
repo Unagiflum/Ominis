@@ -23,8 +23,8 @@ class DQNAgent:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Model
-        hl_sizes = [128, 256, 512]
-        hidden_size = hl_sizes[self.params['hl_size_idx']]
+        self.HL_SIZES = [128, 256, 512]
+        hidden_size = self.HL_SIZES[self.params['hl_size_idx']]
         hidden_count = self.params['hl_count']
         
         self.model = OminisNet(hidden_size=hidden_size, hidden_count=hidden_count).to(self.device)
@@ -119,7 +119,7 @@ class DQNAgent:
         
         return [lat, rot, vert]
 
-    def calculate_reward(self, game, lines_cleared, game_over, start_stats):
+    def calculate_reward(self, game, lines_cleared, game_over, start_stats, piece_in_upper_half):
         # Calculate reward based on the CHANGE in state
         reward = 0
         
@@ -148,6 +148,11 @@ class DQNAgent:
         if holes_change > 0:
             o_factor = self.params['overhang_penalty'] / 100.0
             reward -= holes_change * o_factor * 20 # Multiplier for impact
+            
+        # 5. High Stacking Penalty
+        # Penalize if THIS piece was placed in the upper half
+        if piece_in_upper_half:
+            reward -= 10
             
         return reward
 
