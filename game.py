@@ -698,31 +698,8 @@ class Game:
         piece_before = self.current_piece
         lines_before = self.lines_cleared_total
         
-        # Check if piece is in upper half BEFORE locking
-        half_height = self.grid_height // 2
         piece_in_upper_half = False
         overhangs = 0  # Count blocks in piece with voids beneath them
-        
-        if piece_before:
-            for x, y in piece_before.shape:
-                abs_y = piece_before.y + y
-                abs_x = piece_before.x + x
-                
-                # Check if in upper half
-                if abs_y < half_height:
-                    piece_in_upper_half = True
-                
-                # Check for overhang: is there a void directly beneath this block?
-                # (Only count if this block is within grid bounds and above ground)
-                if 0 <= abs_x < self.grid_width and 0 <= abs_y < self.grid_height - 1:
-                    # Check if supported by another block in the same piece
-                    if (x, y + 1) in piece_before.shape:
-                        continue
-
-                    cell_below_y = abs_y + 1
-                    # Check if cell below is empty
-                    if self.grid.grid[cell_below_y][abs_x] == (0, 0, 0):
-                        overhangs += 1
         
         # Execute the moves
         self.step_ai(moves)
@@ -756,6 +733,33 @@ class Game:
         
         # 6. If Piece Locked, Distribute Reward and Train
         if piece_locked:
+            half_height = self.grid_height // 2
+
+            # Evaluate the final resting position of the locked piece
+            # (after moves/gravitation and any line clears)
+            if piece_before:
+                for x, y in piece_before.shape:
+                    abs_y = piece_before.y + y
+                    abs_x = piece_before.x + x
+
+                    # Skip blocks that are outside the grid
+                    if not (0 <= abs_x < self.grid_width and 0 <= abs_y < self.grid_height):
+                        continue
+
+                    # Track if any part of the placed piece was in the upper half
+                    if abs_y < half_height:
+                        piece_in_upper_half = True
+
+                    # Only consider overhangs for blocks that remain on the grid
+                    # (they may have been cleared as part of a completed line)
+                    if self.grid.grid[abs_y][abs_x] != piece_before.color:
+                        continue
+
+                    # If there's no supporting block directly beneath, count as an overhang
+                    if abs_y < self.grid_height - 1 and (x, y + 1) not in piece_before.shape:
+                        if self.grid.grid[abs_y + 1][abs_x] == (0, 0, 0):
+                            overhangs += 1
+
             # Calculate Final Reward for this placement
             # Use piece_start_stats (captured at the beginning) instead of self.start_stats
             # Pass overhangs (not grid-wide holes) for accurate overhang penalty
