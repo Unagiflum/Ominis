@@ -282,12 +282,12 @@ class UI:
         
         sy = current_y + 40
         # Hidden Layer Size
-        s_rect = self.draw_slider(slider_x, sy, slider_width, params['hl_size_idx'] / 2.0, f"Hidden Size: {hl_size_val}", mouse_pos, self.small_font)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, params['hl_size_idx'] / 2.0, f"Hidden Size: {hl_size_val}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['hl_size'] = s_rect
         sy += 50
         
         # Hidden Layer Count (1, 2, 3, 4)
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (params['hl_count'] - 1) / 3.0, f"Hidden Layers: {params['hl_count']}", mouse_pos, self.small_font)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (params['hl_count'] - 1) / 3.0, f"Hidden Layers: {params['hl_count']}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['hl_count'] = s_rect
         
         current_y += arch_height + 20
@@ -298,29 +298,29 @@ class UI:
         
         sy = current_y + 40
         # Height Penalty
-        s_rect = self.draw_slider(slider_x, sy, slider_width, params['height_penalty'] / 100.0, f"Height Penalty: {params['height_penalty']}%", mouse_pos, self.small_font)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, params['height_penalty'] / 100.0, f"Height Penalty: {params['height_penalty']}%", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['height_penalty'] = s_rect
         sy += 50
         
         # Overhang Penalty
-        s_rect = self.draw_slider(slider_x, sy, slider_width, params['overhang_penalty'] / 100.0, f"Overhang Penalty: {params['overhang_penalty']}%", mouse_pos, self.small_font)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, params['overhang_penalty'] / 100.0, f"Overhang Penalty: {params['overhang_penalty']}%", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['overhang_penalty'] = s_rect
         sy += 50
         
         # Max Polyomino Size (1, 2, 3, 4, 5)
         # Range 1-5, span 4.
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (params['max_size'] - 1) / 4.0, f"Max Piece Size: {params['max_size']}", mouse_pos, self.small_font)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (params['max_size'] - 1) / 4.0, f"Max Piece Size: {params['max_size']}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['max_size'] = s_rect
         sy += 50
 
         # Pieces tracked (reward buffer size)
         pieces_tracked = max(1, min(20, params.get('pieces_tracked', 10)))
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (pieces_tracked - 1) / 19.0, f"Pieces Tracked: {pieces_tracked}", mouse_pos, self.small_font)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (pieces_tracked - 1) / 19.0, f"Pieces Tracked: {pieces_tracked}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['pieces_tracked'] = s_rect
         sy += 40
         
         # Short Games Checkbox
-        short_games_chk_rect = self.draw_checkbox(slider_x, sy, params.get('short_games', False), "Short Games", mouse_pos)
+        short_games_chk_rect = self.draw_checkbox(slider_x, sy, params.get('short_games', False), "Short Games", mouse_pos, active=not is_training)
         
         # Bottom Controls
         bottom_y = screen_height - padding - 50 
@@ -392,13 +392,14 @@ class UI:
         resume_rect = resume_text.get_rect(center=(x + width // 2, y + height // 2 + 60))
         self.screen.blit(resume_text, resume_rect)
 
-    def draw_checkbox(self, x, y, checked, label, mouse_pos=None):
+    def draw_checkbox(self, x, y, checked, label, mouse_pos=None, active=True):
         # Box
         rect = pygame.Rect(x, y, 20, 20)
         
         # Hover effect
-        color = self.text_color
-        if mouse_pos and rect.collidepoint(mouse_pos):
+        base_color = self.text_color if active else (100, 100, 100)
+        color = base_color
+        if active and mouse_pos and rect.collidepoint(mouse_pos):
             color = self.accent_color
             
         pygame.draw.rect(self.screen, color, rect, 2, border_radius=4)
@@ -436,28 +437,31 @@ class UI:
         
         return rect
 
-    def draw_slider(self, x, y, width, value, label, mouse_pos=None, font=None):
+    def draw_slider(self, x, y, width, value, label, mouse_pos=None, font=None, active=True):
         if font is None:
             font = self.font
         # Label
-        text = font.render(label, True, self.text_color)
+        label_color = self.text_color if active else (120, 120, 120)
+        text = font.render(label, True, label_color)
         self.screen.blit(text, (x + width//2 - text.get_width()//2, y - 25))
         
         # Bar
         bar_rect = pygame.Rect(x, y, width, 10)
-        pygame.draw.rect(self.screen, (50, 50, 50), bar_rect, border_radius=5)
+        bar_color = (50, 50, 50) if active else (35, 35, 35)
+        pygame.draw.rect(self.screen, bar_color, bar_rect, border_radius=5)
         
         # Active part of bar
         active_width = int(value * width)
         active_rect = pygame.Rect(x, y, active_width, 10)
-        pygame.draw.rect(self.screen, self.border_color, active_rect, border_radius=5)
+        active_color = self.border_color if active else (80, 80, 80)
+        pygame.draw.rect(self.screen, active_color, active_rect, border_radius=5)
         
         # Handle
         handle_x = x + active_width
         handle_rect = pygame.Rect(handle_x - 8, y - 8, 16, 26)
         
-        color = self.text_color
-        if mouse_pos and handle_rect.collidepoint(mouse_pos):
+        color = self.text_color if active else (100, 100, 100)
+        if active and mouse_pos and handle_rect.collidepoint(mouse_pos):
             color = self.accent_color
             
         pygame.draw.rect(self.screen, color, handle_rect, border_radius=4)
