@@ -130,7 +130,7 @@ class MonteCarloAgent:
         
         return [lat, rot, vert]
 
-    def calculate_reward(self, game, lines_cleared, game_over, start_stats, piece_in_upper_half, overhangs):
+    def calculate_reward(self, game, lines_cleared, game_over, start_stats, piece_in_upper_half, overhangs, touching_bottom):
         # Calculate reward based on the CHANGE in state
         reward = 0
         
@@ -167,7 +167,11 @@ class MonteCarloAgent:
         if piece_in_upper_half:
             reward -= 10
 
-        # 6. Safe placement reward:
+        # 6. Bottom Placement Reward
+        if touching_bottom:
+            reward += 30
+
+        # 7. Safe placement reward:
         # Encourage placements that do NOT raise height, avoid upper half, and introduce no overhangs.
         if height_change <= 0 and not piece_in_upper_half and overhangs == 0:
             reward += 10

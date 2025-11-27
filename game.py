@@ -760,10 +760,19 @@ class Game:
                         if self.grid.grid[abs_y + 1][abs_x] == (0, 0, 0):
                             overhangs += 1
 
+            # Check if piece is touching the bottom
+            touching_bottom = False
+            if piece_before:
+                for x, y in piece_before.shape:
+                    abs_y = piece_before.y + y
+                    if abs_y == self.grid_height - 1:
+                        touching_bottom = True
+                        break
+
             # Calculate Final Reward for this placement
             # Use piece_start_stats (captured at the beginning) instead of self.start_stats
             # Pass overhangs (not grid-wide holes) for accurate overhang penalty
-            final_reward = self.agent.calculate_reward(self, lines_cleared, done, piece_start_stats, piece_in_upper_half, overhangs)
+            final_reward = self.agent.calculate_reward(self, lines_cleared, done, piece_start_stats, piece_in_upper_half, overhangs, touching_bottom)
             
             # In visual mode with animations, defer trajectory processing
             if self.state == "ANIMATING_CLEAR":
