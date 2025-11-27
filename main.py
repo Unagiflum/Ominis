@@ -7,4 +7,12 @@ if __name__ == "__main__":
     pygame.font.init()
     
     game = Game()
-    game.run()
+    try:
+        game.run()
+    except KeyboardInterrupt:
+        # Graceful shutdown if user interrupts from console
+        try:
+            game.audio.cleanup()
+        except Exception:
+            pass
+        pygame.quit()

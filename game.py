@@ -828,6 +828,8 @@ class Game:
         
         # 6. If Piece Locked, Distribute Reward and Train
         if piece_locked:
+            piece_limit_reached = False
+
             # Short games: Increment move counter
             if self.train_params.get('short_games', False):
                 self.short_games_move_count += 1
@@ -839,12 +841,13 @@ class Game:
             pieces_limit = self.get_pieces_tracked_limit()
             if self.train_params.get('short_games', False) and self.short_games_move_count >= pieces_limit:
                 done = True  # Mark as done without triggering game over
+                piece_limit_reached = True
 
             # Decide if we should pay out rewards now (line clear or game end)
             reward_event = None
             if lines_cleared > 0:
                 reward_event = self.agent.calculate_reward(lines_cleared, False)
-            elif done:
+            elif done and not piece_limit_reached:
                 # Only penalize true game overs (not short game limit)
                 reward_event = self.agent.calculate_reward(0, self.state == "GAMEOVER")
 
@@ -856,6 +859,11 @@ class Game:
                     self.apply_reward_to_buffer(reward_event, done)
                     if done:
                         self.finish_training_round()
+            elif piece_limit_reached:
+                # Piece cap reached: skip training to avoid noisy targets, just restart
+                self.current_trajectory = []
+                self.trajectory_buffer.clear()
+                self.finish_training_round()
         
         
         # Auto-save every 5 minutes
