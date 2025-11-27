@@ -29,7 +29,7 @@ class Game:
         self.score = 0
         self.level = 1
         self.lines_cleared_total = 0
-        self.pieces_spawned = 0
+        self.pieces_locked = 0
         
         self.current_piece = None
         self.next_piece = None
@@ -185,7 +185,6 @@ class Game:
         # We want the lowest block (max_y) to be at y = -1
         max_y = max(y for x, y in p.shape)
         p.y = -max_y - 1
-        self.pieces_spawned += 1
         return p
 
     def reset(self):
@@ -193,7 +192,7 @@ class Game:
         self.score = 0
         self.level = 1
         self.lines_cleared_total = 0
-        self.pieces_spawned = 0
+        self.pieces_locked = 0
         self.fall_speed = 1000
         self.current_trajectory = []
         self.trajectory_buffer = deque(maxlen=self.get_pieces_tracked_limit())
@@ -650,6 +649,7 @@ class Game:
                 self.score += 1
         else:
             self.grid.lock_shape(self.current_piece)
+            self.pieces_locked += 1
             
             # Check for Game Over (Locked piece extends above grid)
             game_over = False
@@ -673,7 +673,7 @@ class Game:
     def handle_game_over(self):
         self.state = "GAMEOVER"
         self.audio.stop()
-        print(f"Game Over, Pieces: {self.pieces_spawned}, Lines: {self.lines_cleared_total}")
+        print(f"Game Over, Pieces: {self.pieces_locked}, Lines: {self.lines_cleared_total}")
 
     def queue_current_trajectory(self):
         """Move the current piece trajectory into the rolling buffer."""
@@ -697,7 +697,7 @@ class Game:
 
     def finish_training_round(self):
         """Handle end-of-game bookkeeping and restart training."""
-        print(f"Game Over, Pieces: {self.pieces_spawned}, Lines: {self.lines_cleared_total}")
+        print(f"Game Over, Pieces: {self.pieces_locked}, Lines: {self.lines_cleared_total}")
         self.state = "TRAINING" # Restore state BEFORE reset so it knows to use training params
         self.reset() # Auto-restart during training
         if not self.train_params['visual_mode']:
