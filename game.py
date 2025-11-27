@@ -28,6 +28,7 @@ class Game:
         self.score = 0
         self.level = 1
         self.lines_cleared_total = 0
+        self.pieces_spawned = 0
         
         self.current_piece = None
         self.next_piece = None
@@ -153,6 +154,7 @@ class Game:
         # We want the lowest block (max_y) to be at y = -1
         max_y = max(y for x, y in p.shape)
         p.y = -max_y - 1
+        self.pieces_spawned += 1
         return p
 
     def reset(self):
@@ -160,7 +162,7 @@ class Game:
         self.score = 0
         self.level = 1
         self.lines_cleared_total = 0
-        self.lines_cleared_total = 0
+        self.pieces_spawned = 0
         self.fall_speed = 1000
         self.current_trajectory = []
         
@@ -498,8 +500,7 @@ class Game:
                 
                 # Check for game over on spawn
                 if self.grid.check_collision(self.current_piece):
-                    self.state = "GAMEOVER"
-                    self.audio.stop()
+                    self.handle_game_over()
                 
                 return True  # Line clear handled, piece spawned
             else:
@@ -584,8 +585,7 @@ class Game:
             game_over = False
             for x, y in self.current_piece.shape:
                 if self.current_piece.y + y < 0:
-                    self.state = "GAMEOVER"
-                    self.audio.stop()
+                    self.handle_game_over()
                     game_over = True
                     break
             
@@ -597,8 +597,13 @@ class Game:
                     self.start_stats = self.get_grid_stats()
                     self.next_piece = self.spawn_piece()
                     if self.grid.check_collision(self.current_piece):
-                        self.state = "GAMEOVER"
-                        self.audio.stop()
+                        self.handle_game_over()
+
+
+    def handle_game_over(self):
+        self.state = "GAMEOVER"
+        self.audio.stop()
+        print(f"Game Over, Pieces: {self.pieces_spawned}, Lines: {self.lines_cleared_total}")
 
     def step_ai(self, moves):
         """

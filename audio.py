@@ -152,8 +152,7 @@ class AudioPlayer:
         self.current_index = random.randint(0, len(self.playlist) - 1)
         self.direction = random.choice([1, -1])
         self.sequence_initialized = True
-        print(f"Music Sequence: Start Index {self.current_index}, Direction {self.direction}")
-
+        
     def start(self):
         self.enabled = True
         if not self.sequence_initialized:
@@ -195,7 +194,6 @@ class AudioPlayer:
         track = self.playlist[self.current_index]
         self.current_index = (self.current_index + self.direction) % len(self.playlist)
         
-        print(f"Playing: {track} at speed {self.speed:.2f}")
         self.current_thread = MidiThread(track, self.midi_out)
         self.current_thread.set_speed(self.speed)
         self.current_thread.set_volume(self.volume)
