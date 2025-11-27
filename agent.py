@@ -130,51 +130,33 @@ class MonteCarloAgent:
         
         return [lat, rot, vert]
 
-    def calculate_reward(self, game, lines_cleared, game_over, start_stats, piece_in_upper_half, overhangs, touching_bottom):
-        # Calculate reward based on the CHANGE in state
+    def calculate_reward(self, game, lines_cleared, game_over, placed_block_heights, overhang_heights):
+        # Calculate reward based on specific rules
         reward = 0
         
-        # Get current stats
-        current_height, current_holes = game.get_grid_stats()
-        start_height, start_holes = start_stats
-        
-        # 1. Line Clears (Big reward)
+        # 1. Line Clears
         if lines_cleared > 0:
-            line_reward = (lines_cleared ** 2) * 100
-            reward += line_reward
+            reward += 350 * (lines_cleared ** 2)
             
         # 2. Game Over Penalty
         if game_over:
-            reward -= 500
+            reward -= 1000
             
-        # 3. Height Change
-        # If height increased, penalty.
-        height_change = current_height - start_height
-        if height_change > 0:
-            h_factor = self.params['height_penalty'] / 100.0
-            height_penalty = height_change * h_factor * 10
-            reward -= height_penalty
+        # 3. Placement Penalty
+        # -5 * (5 + height) / 5 per block
+        # Scaled by height_penalty slider (assume 100 is 1.0x)
+        h_slider = self.params['height_penalty'] / 100.0
+        for h in placed_block_heights:
+            penalty = 5 * (5 + h) / 5.0
+            reward -= penalty * h_slider
             
         # 4. Overhang Penalty
-        # Penalize for each block in the newly placed piece that has a void beneath it
-        if overhangs > 0:
-            o_factor = self.params['overhang_penalty'] / 100.0
-            overhang_penalty = overhangs * o_factor * 10
-            reward -= overhang_penalty
-            
-        # 5. High Stacking Penalty
-        # Penalize if THIS piece was placed in the upper half
-        if piece_in_upper_half:
-            reward -= 10
-
-        # 6. Bottom Placement Reward
-        if touching_bottom:
-            reward += 30
-
-        # 7. Safe placement reward:
-        # Encourage placements that do NOT raise height, avoid upper half, and introduce no overhangs.
-        if height_change <= 0 and not piece_in_upper_half and overhangs == 0:
-            reward += 10
+        # -5 * (5 + height) / 5 per overhang
+        # Scaled by overhang_penalty slider
+        o_slider = self.params['overhang_penalty'] / 100.0
+        for h in overhang_heights:
+            penalty = 5 * (5 + h) / 5.0
+            reward -= penalty * o_slider
             
         return reward
 

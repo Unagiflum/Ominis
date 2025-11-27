@@ -733,10 +733,10 @@ class Game:
         
         # 6. If Piece Locked, Distribute Reward and Train
         if piece_locked:
-            half_height = self.grid_height // 2
-
-            # Evaluate the final resting position of the locked piece
-            # (after moves/gravitation and any line clears)
+            # Identify placed blocks and overhangs
+            placed_block_heights = []
+            overhang_heights = []
+            
             if piece_before:
                 for x, y in piece_before.shape:
                     abs_y = piece_before.y + y
@@ -745,10 +745,10 @@ class Game:
                     # Skip blocks that are outside the grid
                     if not (0 <= abs_x < self.grid_width and 0 <= abs_y < self.grid_height):
                         continue
-
-                    # Track if any part of the placed piece was in the upper half
-                    if abs_y < half_height:
-                        piece_in_upper_half = True
+                        
+                    # Calculate height from bottom (0 = floor)
+                    height = self.grid_height - 1 - abs_y
+                    placed_block_heights.append(height)
 
                     # Only consider overhangs for blocks that remain on the grid
                     # (they may have been cleared as part of a completed line)
@@ -758,21 +758,10 @@ class Game:
                     # If there's no supporting block directly beneath, count as an overhang
                     if abs_y < self.grid_height - 1 and (x, y + 1) not in piece_before.shape:
                         if self.grid.grid[abs_y + 1][abs_x] == (0, 0, 0):
-                            overhangs += 1
-
-            # Check if piece is touching the bottom
-            touching_bottom = False
-            if piece_before:
-                for x, y in piece_before.shape:
-                    abs_y = piece_before.y + y
-                    if abs_y == self.grid_height - 1:
-                        touching_bottom = True
-                        break
+                            overhang_heights.append(height)
 
             # Calculate Final Reward for this placement
-            # Use piece_start_stats (captured at the beginning) instead of self.start_stats
-            # Pass overhangs (not grid-wide holes) for accurate overhang penalty
-            final_reward = self.agent.calculate_reward(self, lines_cleared, done, piece_start_stats, piece_in_upper_half, overhangs, touching_bottom)
+            final_reward = self.agent.calculate_reward(self, lines_cleared, done, placed_block_heights, overhang_heights)
             
             # In visual mode with animations, defer trajectory processing
             if self.state == "ANIMATING_CLEAR":
