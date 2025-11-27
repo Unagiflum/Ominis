@@ -857,7 +857,7 @@ class Game:
                 # Visual Mode: Run at specific speed (e.g. 250ms)
                 # User said: "screen shows the agent playing at some speed... Perhaps 250ms per piece advance"
                 # Wait, "per piece advance" usually means per step (gravity).
-                train_speed = 25 # ms
+                train_speed = 10 # ms
                 if current_time - self.fall_time > train_speed:
                     self.step_ai_training()
                     self.fall_time = current_time
