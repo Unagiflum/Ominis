@@ -705,9 +705,9 @@ class Game:
 
     def step_ai(self, moves):
         """
-        Executes moves based on budget: 3 Lateral, 3 Vertical, 3 Rotation.
+        Executes moves based on budget: 3 Lateral, 3 Rotation (vertical/hard drops only if provided).
         Then advances the game by one tick.
-        moves: List of strings, e.g., ["LEFT", "ROTATE_CW", "DOWN"]
+        moves: List of strings, e.g., ["LEFT", "ROTATE_CW"]
         """
         if self.state != "PLAYING" and self.state != "TRAINING":
              return
@@ -775,7 +775,7 @@ class Game:
         
         # 2. Select Action
         action = self.agent.select_action(state)
-        lat_idx, rot_idx, vert_idx = action
+        lat_idx, rot_idx = action
         
         # Map indices to moves
         moves = []
@@ -787,9 +787,6 @@ class Game:
         # Rotate: 0=CCW, 1=Stay, 2=CW
         if rot_idx == 0: moves.append("ROTATE_CCW")
         elif rot_idx == 2: moves.append("ROTATE_CW")
-        
-        # Vertical: 0=Down, 1=Stay
-        if vert_idx == 0: moves.append("DOWN")
         
         # 3. Execute Moves (and advance tick)
         # We need to track if the piece was locked/placed during this step.
@@ -890,7 +887,7 @@ class Game:
         action = self.agent.select_action(state)
         self.agent.epsilon = old_eps
         
-        lat_idx, rot_idx, vert_idx = action
+        lat_idx, rot_idx = action
         
         # Map indices to moves
         moves = []
@@ -899,8 +896,6 @@ class Game:
         
         if rot_idx == 0: moves.append("ROTATE_CCW")
         elif rot_idx == 2: moves.append("ROTATE_CW")
-        
-        if vert_idx == 0: moves.append("DOWN")
         
         # 3. Execute Moves
         self.step_ai(moves)

@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class OminisNet(nn.Module):
-    def __init__(self, input_channels=3, hidden_size=256, hidden_count=2, output_heads=[3, 3, 2]):
+    def __init__(self, input_channels=3, hidden_size=256, hidden_count=2, output_heads=[3, 3]):
         super(OminisNet, self).__init__()
         
         # CNN for spatial features (Board, Piece, Ghost)
@@ -41,9 +41,6 @@ class OminisNet(nn.Module):
         # Rotation: CCW, Stay, CW
         self.rotate_head = nn.Linear(hidden_size, output_heads[1])
         
-        # Vertical: Down, Stay
-        self.vertical_head = nn.Linear(hidden_size, output_heads[2])
-        
     def forward(self, grid_input, next_piece_input):
         # grid_input: (B, 3, 34, 12)
         x = F.relu(self.conv1(grid_input))
@@ -59,6 +56,5 @@ class OminisNet(nn.Module):
         
         lateral = self.lateral_head(features)
         rotate = self.rotate_head(features)
-        vertical = self.vertical_head(features)
         
-        return lateral, rotate, vertical
+        return lateral, rotate

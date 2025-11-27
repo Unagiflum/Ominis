@@ -43,8 +43,7 @@ class MonteCarloAgent:
         # Action Space
         # Lateral: 0=Left, 1=Stay, 2=Right
         # Rotate: 0=CCW, 1=Stay, 2=CW
-        # Vertical: 0=Down, 1=Stay
-        self.action_space = [3, 3, 2]
+        self.action_space = [3, 3]
 
     def get_state(self, game):
         # 1. Board Channel (12 x 34)
@@ -114,21 +113,19 @@ class MonteCarloAgent:
             # Random actions
             lat = random.randint(0, 2)
             rot = random.randint(0, 2)
-            vert = random.randint(0, 1)
-            return [lat, rot, vert]
+            return [lat, rot]
         
         # Predict
         grid_tensor = torch.FloatTensor(grid_input).unsqueeze(0).to(self.device)
         next_tensor = torch.FloatTensor(next_piece_input).unsqueeze(0).to(self.device)
         
         with torch.no_grad():
-            lat_q, rot_q, vert_q = self.model(grid_tensor, next_tensor)
+            lat_q, rot_q = self.model(grid_tensor, next_tensor)
             
         lat = torch.argmax(lat_q).item()
         rot = torch.argmax(rot_q).item()
-        vert = torch.argmax(vert_q).item()
         
-        return [lat, rot, vert]
+        return [lat, rot]
 
     def calculate_reward(self, lines_cleared, game_over):
         """Monte Carlo reward: only line clears (+) and game over (-)."""
@@ -172,7 +169,7 @@ class MonteCarloAgent:
         
         Args:
             state: (grid_input, next_piece_input) tuple
-            action: [lateral_idx, rotation_idx, vertical_idx] list
+            action: [lateral_idx, rotation_idx] list
             R_piece: Scalar Monte Carlo return for the piece trajectory
         """
         self.memory.append((state, action, R_piece))
@@ -208,7 +205,7 @@ class MonteCarloAgent:
         R_piece_tensor = torch.FloatTensor(R_piece_batch).to(self.device)
         
         # Forward pass through main network
-        lat_q, rot_q, vert_q = self.model(grid_tensor, next_piece_tensor)
+        lat_q, rot_q = self.model(grid_tensor, next_piece_tensor)
         
         # Compute loss using only the Q-values for the chosen actions
         # We use gather to select Q(s, a) for the action taken
@@ -217,16 +214,14 @@ class MonteCarloAgent:
         # Extract Q-values for chosen actions from each head
         lat_q_chosen = lat_q.gather(1, action_tensor[:, 0:1]).squeeze(1)  # Shape: (batch_size,)
         rot_q_chosen = rot_q.gather(1, action_tensor[:, 1:2]).squeeze(1)
-        vert_q_chosen = vert_q.gather(1, action_tensor[:, 2:3]).squeeze(1)
         
         # Monte Carlo supervised loss: All heads predict the same R_piece
         criterion = torch.nn.MSELoss()
         loss_lat = criterion(lat_q_chosen, R_piece_tensor)
         loss_rot = criterion(rot_q_chosen, R_piece_tensor)
-        loss_vert = criterion(vert_q_chosen, R_piece_tensor)
         
         # Total loss is the sum of all head losses
-        loss = loss_lat + loss_rot + loss_vert
+        loss = loss_lat + loss_rot
         
         # Backpropagation
         self.optimizer.zero_grad()
@@ -270,7 +265,7 @@ class MonteCarloAgent:
         Architecture params are taken from current UI settings, not from file.
         """
         checkpoint = torch.load(path, map_location=self.device)
-        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.epsilon = checkpoint['epsilon']
         
