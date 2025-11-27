@@ -293,7 +293,7 @@ class UI:
         current_y += arch_height + 20
         
         # --- Reward / Curriculum Group ---
-        reward_height = 260
+        reward_height = 270
         self.draw_group_box(padding, current_y, left_pane_width, reward_height, "Reward & Curriculum")
         
         sy = current_y + 40
@@ -312,6 +312,12 @@ class UI:
         s_rect = self.draw_slider(slider_x, sy, slider_width, (params['max_size'] - 1) / 4.0, f"Max Piece Size: {params['max_size']}", mouse_pos, self.small_font)
         if not is_training: slider_rects['max_size'] = s_rect
         sy += 50
+
+        # Pieces tracked (reward buffer size)
+        pieces_tracked = max(1, min(20, params.get('pieces_tracked', 10)))
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (pieces_tracked - 1) / 19.0, f"Pieces Tracked: {pieces_tracked}", mouse_pos, self.small_font)
+        if not is_training: slider_rects['pieces_tracked'] = s_rect
+        sy += 40
         
         # Short Games Checkbox
         short_games_chk_rect = self.draw_checkbox(slider_x, sy, params.get('short_games', False), "Short Games", mouse_pos)
@@ -330,7 +336,7 @@ class UI:
         
         # Visual Mode Checkbox
         chk_rect = self.draw_checkbox(padding, bottom_y, params['visual_mode'], "Visual Mode", mouse_pos)
-        bottom_y -= 50
+        bottom_y -= 30
 
         # Volume Slider
         # Only relevant if visual mode is on? Or always show? User said "need not do anything when visual mode is off".

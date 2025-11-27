@@ -130,39 +130,16 @@ class MonteCarloAgent:
         
         return [lat, rot, vert]
 
-    def calculate_reward(self, game, lines_cleared, game_over, placed_block_heights, overhang_heights, baseline_height=0):
-        # Calculate reward based on specific rules
+    def calculate_reward(self, lines_cleared, game_over):
+        """Monte Carlo reward: only line clears (+) and game over (-)."""
         reward = 0
-        
-        # 1. Line Clears
+
         if lines_cleared > 0:
             reward += 350 * (lines_cleared ** 2)
-            
-        # 2. Game Over Penalty
+
         if game_over:
             reward -= 1000
-            
-        # 3. Placement Penalty
-        # Penalty is 5 + (height above baseline)
-        # where baseline is the lowest column height
-        # Scaled by height_penalty slider (assume 100 is 1.0x)
-        h_slider = self.params['height_penalty'] / 100.0
-        for h in placed_block_heights:
-            # h is height from floor, baseline_height is the lowest column height
-            # Penalty based on height above the baseline
-            height_above_baseline = max(0, h - baseline_height)
-            penalty = 5 + height_above_baseline
-            reward -= penalty * h_slider
-            
-        # 4. Overhang Penalty
-        # Same calculation: 5 + (height above baseline)
-        # Scaled by overhang_penalty slider
-        o_slider = self.params['overhang_penalty'] / 100.0
-        for h in overhang_heights:
-            height_above_baseline = max(0, h - baseline_height)
-            penalty = 5 + height_above_baseline
-            reward -= penalty * o_slider
-            
+
         return reward
 
 

@@ -1,5 +1,6 @@
 import pygame
 import math
+from collections import deque
 from grid import Grid
 from tetrominoes import Pentomino
 from input_manager import InputManager
@@ -69,6 +70,7 @@ class Game:
             'height_penalty': 50,
             'overhang_penalty': 50,
             'max_size': 5,
+            'pieces_tracked': 10,
             'short_games': False
         }
         self.train_slider_rects = {}
@@ -82,18 +84,19 @@ class Game:
         self.agent = None
         self.training_step_count = 0
         self.current_trajectory = [] # Buffer for trajectory-based training
+        self.trajectory_buffer = deque(maxlen=self.train_params['pieces_tracked'])
         self.start_stats = (0, 0) # (Height, Holes) at start of piece
         self.last_save_time = 0 # Track last auto-save time
         
-        # Pending trajectory data for visual mode (defer processing until animation completes)
-        self.pending_trajectory = None
-        self.pending_reward = None
-        self.pending_done = None
+        # Pending reward application for visual-mode line clear animation
+        self.pending_reward_event = None
         
         # Short games tracking
         self.short_games_move_count = 0
         
         self.load_settings()
+        # Ensure buffers respect any loaded settings (e.g., pieces_tracked)
+        self.trajectory_buffer = deque(maxlen=self.get_pieces_tracked_limit())
 
     def get_model_filename(self):
         """Generates filename based on current architecture params."""
@@ -133,6 +136,10 @@ class Game:
             print("Saved settings to settings.json")
         except Exception as e:
             print(f"Failed to save settings: {e}")
+
+    def get_pieces_tracked_limit(self):
+        """Clamp the pieces_tracked curriculum value to a sane range."""
+        return max(1, min(20, self.train_params.get('pieces_tracked', 10)))
 
     def get_grid_stats(self):
         """Returns (max_height, holes) for the current grid."""
@@ -189,6 +196,9 @@ class Game:
         self.pieces_spawned = 0
         self.fall_speed = 1000
         self.current_trajectory = []
+        self.trajectory_buffer = deque(maxlen=self.get_pieces_tracked_limit())
+        self.pending_reward_event = None
+        self.short_games_move_count = 0
         
         # Save original state before it might be changed
         original_state = self.state
@@ -665,6 +675,34 @@ class Game:
         self.audio.stop()
         print(f"Game Over, Pieces: {self.pieces_spawned}, Lines: {self.lines_cleared_total}")
 
+    def queue_current_trajectory(self):
+        """Move the current piece trajectory into the rolling buffer."""
+        if self.current_trajectory:
+            self.trajectory_buffer.append(self.current_trajectory[:])
+        self.current_trajectory = []
+
+    def apply_reward_to_buffer(self, reward_value, done):
+        """Apply a reward to every step in the buffered trajectories."""
+        if not self.agent:
+            self.trajectory_buffer.clear()
+            return
+        if not self.trajectory_buffer:
+            return
+
+        for trajectory in self.trajectory_buffer:
+            self.agent.add_trajectory_with_done(trajectory, reward_value, done)
+
+        self.trajectory_buffer.clear()
+        self.agent.replay()
+
+    def finish_training_round(self):
+        """Handle end-of-game bookkeeping and restart training."""
+        print(f"Game Over, Pieces: {self.pieces_spawned}, Lines: {self.lines_cleared_total}")
+        self.state = "TRAINING" # Restore state BEFORE reset so it knows to use training params
+        self.reset() # Auto-restart during training
+        if not self.train_params['visual_mode']:
+            self.audio.stop()
+
     def step_ai(self, moves):
         """
         Executes moves based on budget: 3 Lateral, 3 Vertical, 3 Rotation.
@@ -732,11 +770,6 @@ class Game:
         if not self.agent:
             return
 
-        # CRITICAL: Capture start_stats NOW, before piece locks
-        # If we don't do this, game_tick() will update self.start_stats when spawning the next piece,
-        # and the reward calculation will compare the same values and always get 0 change.
-        piece_start_stats = self.start_stats
-
         # 1. Get Current State
         state = self.agent.get_state(self)
         
@@ -762,9 +795,6 @@ class Game:
         # We need to track if the piece was locked/placed during this step.
         piece_before = self.current_piece
         lines_before = self.lines_cleared_total
-        
-        piece_in_upper_half = False
-        overhangs = 0  # Count blocks in piece with voids beneath them
         
         # Execute the moves
         self.step_ai(moves)
@@ -801,72 +831,31 @@ class Game:
             # Short games: Increment move counter
             if self.train_params.get('short_games', False):
                 self.short_games_move_count += 1
-            
-            # Identify placed blocks and overhangs
-            placed_block_heights = []
-            overhang_heights = []
-            
-            if piece_before:
-                for x, y in piece_before.shape:
-                    abs_y = piece_before.y + y
-                    abs_x = piece_before.x + x
 
-                    # Skip blocks that are outside the grid
-                    if not (0 <= abs_x < self.grid_width and 0 <= abs_y < self.grid_height):
-                        continue
-                        
-                    # Calculate height from bottom (0 = floor)
-                    height = self.grid_height - 1 - abs_y
-                    placed_block_heights.append(height)
+            # Move the locked piece trajectory into the rolling buffer (last N pieces)
+            self.queue_current_trajectory()
 
-                    # Only consider overhangs for blocks that remain on the grid
-                    # (they may have been cleared as part of a completed line)
-                    if self.grid.grid[abs_y][abs_x] != piece_before.color:
-                        continue
-
-                    # If there's no supporting block directly beneath, count as an overhang
-                    if abs_y < self.grid_height - 1 and (x, y + 1) not in piece_before.shape:
-                        if self.grid.grid[abs_y + 1][abs_x] == (0, 0, 0):
-                            overhang_heights.append(height)
-
-            # Short games: Check if we've reached 10 moves
-            short_games_done = False
-            if self.train_params.get('short_games', False) and self.short_games_move_count >= 10:
-                short_games_done = True
+            # Short games: Check if we've reached the piece limit (N)
+            pieces_limit = self.get_pieces_tracked_limit()
+            if self.train_params.get('short_games', False) and self.short_games_move_count >= pieces_limit:
                 done = True  # Mark as done without triggering game over
-            
-            # Get baseline height (lowest column height) for penalty calculation
-            baseline_height = self.get_lowest_column_height()
-            
-            # Calculate Final Reward for this placement
-            # For short games, don't apply game over penalty if it's just the move limit
-            if short_games_done and not (self.state == "GAMEOVER"):
-                # Game ended due to move limit, not game over
-                final_reward = self.agent.calculate_reward(self, lines_cleared, False, placed_block_heights, overhang_heights, baseline_height)
-            else:
-                final_reward = self.agent.calculate_reward(self, lines_cleared, done, placed_block_heights, overhang_heights, baseline_height)
-            
-            # In visual mode with animations, defer trajectory processing
-            if self.state == "ANIMATING_CLEAR":
-                # Store trajectory data to process after animation completes
-                self.pending_trajectory = self.current_trajectory[:]
-                self.pending_reward = final_reward
-                self.pending_done = done
-                self.current_trajectory = []
-            else:
-                # Headless mode or no animation: process immediately
-                self.agent.add_trajectory_with_done(self.current_trajectory, final_reward, done)
-                self.current_trajectory = []
-                self.agent.replay()
-        
-        if done:
-            # Print game over stats (for both regular game over and short games completion)
-            print(f"Game Over, Pieces: {self.pieces_spawned}, Lines: {self.lines_cleared_total}")
-            
-            self.state = "TRAINING" # Restore state BEFORE reset so it knows to use training params
-            self.reset() # Auto-restart during training
-            if not self.train_params['visual_mode']:
-                self.audio.stop()
+
+            # Decide if we should pay out rewards now (line clear or game end)
+            reward_event = None
+            if lines_cleared > 0:
+                reward_event = self.agent.calculate_reward(lines_cleared, False)
+            elif done:
+                # Only penalize true game overs (not short game limit)
+                reward_event = self.agent.calculate_reward(0, self.state == "GAMEOVER")
+
+            if reward_event is not None:
+                # Apply reward after the clear animation finishes (visual mode)
+                if self.state == "ANIMATING_CLEAR":
+                    self.pending_reward_event = (reward_event, done)
+                else:
+                    self.apply_reward_to_buffer(reward_event, done)
+                    if done:
+                        self.finish_training_round()
         
         
         # Auto-save every 5 minutes
@@ -994,19 +983,13 @@ class Game:
                     self.state = "GAMEOVER"
                     self.audio.stop()
                 
-                # Process pending trajectory if in training mode
-                if self.state == "TRAINING" and self.pending_trajectory is not None:
-                    self.agent.add_trajectory_with_done(
-                        self.pending_trajectory, 
-                        self.pending_reward, 
-                        self.pending_done
-                    )
-                    self.agent.replay()
-                    
-                    # Clear pending data
-                    self.pending_trajectory = None
-                    self.pending_reward = None
-                    self.pending_done = None
+                # Process pending reward if in training mode
+                if self.state == "TRAINING" and self.pending_reward_event is not None:
+                    reward_value, done_flag = self.pending_reward_event
+                    self.apply_reward_to_buffer(reward_value, done_flag)
+                    self.pending_reward_event = None
+                    if done_flag:
+                        self.finish_training_round()
 
     def draw(self):
         self.ui.draw_background()
@@ -1199,6 +1182,10 @@ class Game:
             # Map 0-1 to 1, 2, 3, 4, 5
             size = 1 + int(val * 4.99)
             self.train_params['max_size'] = size
+        elif self.active_slider == 'pieces_tracked':
+            # Map 0-1 to 1-20
+            count = 1 + int(val * 19)
+            self.train_params['pieces_tracked'] = max(1, min(20, count))
 
     def run(self):
         running = True
