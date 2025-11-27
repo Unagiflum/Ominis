@@ -293,7 +293,7 @@ class UI:
         current_y += arch_height + 20
         
         # --- Reward / Curriculum Group ---
-        reward_height = 220
+        reward_height = 260
         self.draw_group_box(padding, current_y, left_pane_width, reward_height, "Reward & Curriculum")
         
         sy = current_y + 40
@@ -311,7 +311,10 @@ class UI:
         # Range 1-5, span 4.
         s_rect = self.draw_slider(slider_x, sy, slider_width, (params['max_size'] - 1) / 4.0, f"Max Piece Size: {params['max_size']}", mouse_pos, self.small_font)
         if not is_training: slider_rects['max_size'] = s_rect
+        sy += 50
         
+        # Short Games Checkbox
+        short_games_chk_rect = self.draw_checkbox(slider_x, sy, params.get('short_games', False), "Short Games", mouse_pos)
         
         # Bottom Controls
         bottom_y = screen_height - padding - 50 
@@ -340,7 +343,7 @@ class UI:
         
         self.draw_grid(grid, offset_x, offset_y)
         
-        return btn_back_rect, chk_rect, btn_start_rect, slider_rects, vol_slider_rect
+        return btn_back_rect, chk_rect, btn_start_rect, slider_rects, vol_slider_rect, short_games_chk_rect
 
     def draw_group_box(self, x, y, width, height, title):
         rect = pygame.Rect(x, y, width, height)

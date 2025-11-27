@@ -68,7 +68,8 @@ class Game:
             'hl_count': 2,
             'height_penalty': 50,
             'overhang_penalty': 50,
-            'max_size': 5
+            'max_size': 5,
+            'short_games': False
         }
         self.train_slider_rects = {}
         self.active_slider = None
@@ -88,6 +89,9 @@ class Game:
         self.pending_trajectory = None
         self.pending_reward = None
         self.pending_done = None
+        
+        # Short games tracking
+        self.short_games_move_count = 0
         
         self.load_settings()
 
@@ -147,6 +151,26 @@ class Game:
                 elif found_block:
                     holes += 1
         return max_height, holes
+    
+    def get_lowest_column_height(self):
+        """Returns the height of the lowest column (lowest max height across all columns).
+        This is used as the baseline for height penalties."""
+        lowest_height = self.grid_height
+        
+        for x in range(self.grid_width):
+            # Find the highest block in this column
+            column_height = 0
+            for y in range(self.grid_height):
+                if self.grid.grid[y][x] != (0, 0, 0):
+                    column_height = self.grid_height - y
+                    break
+            
+            # Track the lowest column height found
+            if column_height < lowest_height:
+                lowest_height = column_height
+        
+        return lowest_height
+
 
     def spawn_piece(self):
         p = Pentomino(self.grid_width // 2, 0, self.allowed_shapes)
@@ -165,6 +189,9 @@ class Game:
         self.pieces_spawned = 0
         self.fall_speed = 1000
         self.current_trajectory = []
+        
+        # Save original state before it might be changed
+        original_state = self.state
         
         # Determine allowed shapes based on selection
         from tetrominoes import get_allowed_shapes
@@ -199,6 +226,37 @@ class Game:
             pass
         else:
             self.audio.start()
+        
+        # Short games: Initialize with random rows filled, each 75% randomly filled with at least 1 missing
+        # Use original_state to check, since state may have been changed to PLAYING above
+        if (original_state == "TRAINING" or original_state == "TRAIN_MENU") and self.train_params.get('short_games', False):
+            import random
+            from tetrominoes import SHAPE_COLORS
+            
+            # Get list of available colors
+            colors = list(SHAPE_COLORS.values())
+            
+            # Fill random number of rows (1-16) from the bottom
+            num_rows = random.randint(1, 16)
+            for row_idx in range(self.grid_height - num_rows, self.grid_height):
+                # Fill 75% of blocks randomly
+                filled_count = 0
+                for col_idx in range(self.grid_width):
+                    if random.random() < 0.75:
+                        # Pick a random color
+                        color = random.choice(colors)
+                        self.grid.grid[row_idx][col_idx] = color
+                        filled_count += 1
+                
+                # Ensure at least one block is missing
+                if filled_count == self.grid_width:
+                    # All filled, remove one randomly
+                    empty_col = random.randint(0, self.grid_width - 1)
+                    self.grid.grid[row_idx][empty_col] = (0, 0, 0)
+            
+            # Reset move counter for short games
+            self.short_games_move_count = 0
+        
 
     def update_score(self, lines):
         if lines > 0:
@@ -310,6 +368,8 @@ class Game:
                             self.state = "MENU"
                         elif self.train_chk_rect and self.train_chk_rect.collidepoint(event.pos):
                             self.train_params['visual_mode'] = not self.train_params['visual_mode']
+                        elif hasattr(self, 'short_games_chk_rect') and self.short_games_chk_rect and self.short_games_chk_rect.collidepoint(event.pos):
+                            self.train_params['short_games'] = not self.train_params.get('short_games', False)
                         elif self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
                             self.reset()
                             self.agent = MonteCarloAgent(self.train_params)
@@ -738,6 +798,10 @@ class Game:
         
         # 6. If Piece Locked, Distribute Reward and Train
         if piece_locked:
+            # Short games: Increment move counter
+            if self.train_params.get('short_games', False):
+                self.short_games_move_count += 1
+            
             # Identify placed blocks and overhangs
             placed_block_heights = []
             overhang_heights = []
@@ -765,8 +829,22 @@ class Game:
                         if self.grid.grid[abs_y + 1][abs_x] == (0, 0, 0):
                             overhang_heights.append(height)
 
+            # Short games: Check if we've reached 10 moves
+            short_games_done = False
+            if self.train_params.get('short_games', False) and self.short_games_move_count >= 10:
+                short_games_done = True
+                done = True  # Mark as done without triggering game over
+            
+            # Get baseline height (lowest column height) for penalty calculation
+            baseline_height = self.get_lowest_column_height()
+            
             # Calculate Final Reward for this placement
-            final_reward = self.agent.calculate_reward(self, lines_cleared, done, placed_block_heights, overhang_heights)
+            # For short games, don't apply game over penalty if it's just the move limit
+            if short_games_done and not (self.state == "GAMEOVER"):
+                # Game ended due to move limit, not game over
+                final_reward = self.agent.calculate_reward(self, lines_cleared, False, placed_block_heights, overhang_heights, baseline_height)
+            else:
+                final_reward = self.agent.calculate_reward(self, lines_cleared, done, placed_block_heights, overhang_heights, baseline_height)
             
             # In visual mode with animations, defer trajectory processing
             if self.state == "ANIMATING_CLEAR":
@@ -782,10 +860,14 @@ class Game:
                 self.agent.replay()
         
         if done:
+            # Print game over stats (for both regular game over and short games completion)
+            print(f"Game Over, Pieces: {self.pieces_spawned}, Lines: {self.lines_cleared_total}")
+            
             self.state = "TRAINING" # Restore state BEFORE reset so it knows to use training params
             self.reset() # Auto-restart during training
             if not self.train_params['visual_mode']:
                 self.audio.stop()
+        
         
         # Auto-save every 5 minutes
         current_time = pygame.time.get_ticks()
@@ -980,7 +1062,7 @@ class Game:
                 display_grid = Grid(self.grid_width, self.grid_height, self.cell_size)
             
             is_training = (self.state == "TRAINING" or (self.state in ["ANIMATING_CLEAR", "ANIMATING_DROP"] and hasattr(self, 'pre_anim_state') and self.pre_anim_state == "TRAINING"))
-            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.train_slider_rects, self.train_slider_rect = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, display_grid, is_training=is_training, volume=self.volume)
+            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.train_slider_rects, self.train_slider_rect, self.short_games_chk_rect = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, display_grid, is_training=is_training, volume=self.volume)
             
             # If TRAINING, we also need to draw the falling piece if Visual Mode is ON
             if is_training and self.train_params['visual_mode']:

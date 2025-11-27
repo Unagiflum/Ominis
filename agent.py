@@ -19,13 +19,13 @@ class MonteCarloAgent:
         self.params = train_params
         
         # Hyperparameters
-        self.batch_size = 64
+        self.batch_size = 128
         self.gamma = 0.99  # Only used if we decide to discount within trajectory
         self.epsilon = 1.0
-        self.epsilon_min = 0.01
-        self.epsilon_decay = 0.995
+        self.epsilon_min = 0.15
+        self.epsilon_decay = 0.999
         self.learning_rate = 0.001
-        self.memory = deque(maxlen=10000)
+        self.memory = deque(maxlen=30000)
         
         # Device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -130,7 +130,7 @@ class MonteCarloAgent:
         
         return [lat, rot, vert]
 
-    def calculate_reward(self, game, lines_cleared, game_over, placed_block_heights, overhang_heights):
+    def calculate_reward(self, game, lines_cleared, game_over, placed_block_heights, overhang_heights, baseline_height=0):
         # Calculate reward based on specific rules
         reward = 0
         
@@ -143,19 +143,24 @@ class MonteCarloAgent:
             reward -= 1000
             
         # 3. Placement Penalty
-        # -5 * (5 + height) / 5 per block
+        # Penalty is 5 + (height above baseline)
+        # where baseline is the lowest column height
         # Scaled by height_penalty slider (assume 100 is 1.0x)
         h_slider = self.params['height_penalty'] / 100.0
         for h in placed_block_heights:
-            penalty = 5 * (5 + h) / 5.0
+            # h is height from floor, baseline_height is the lowest column height
+            # Penalty based on height above the baseline
+            height_above_baseline = max(0, h - baseline_height)
+            penalty = 5 + height_above_baseline
             reward -= penalty * h_slider
             
         # 4. Overhang Penalty
-        # -5 * (5 + height) / 5 per overhang
+        # Same calculation: 5 + (height above baseline)
         # Scaled by overhang_penalty slider
         o_slider = self.params['overhang_penalty'] / 100.0
         for h in overhang_heights:
-            penalty = 5 * (5 + h) / 5.0
+            height_above_baseline = max(0, h - baseline_height)
+            penalty = 5 + height_above_baseline
             reward -= penalty * o_slider
             
         return reward
