@@ -166,6 +166,11 @@ class MonteCarloAgent:
         # Penalize if THIS piece was placed in the upper half
         if piece_in_upper_half:
             reward -= 10
+
+        # 6. Safe placement reward:
+        # Encourage placements that do NOT raise height, avoid upper half, and introduce no overhangs.
+        if height_change <= 0 and not piece_in_upper_half and overhangs == 0:
+            reward += 10
             
         return reward
 
