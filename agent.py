@@ -159,7 +159,7 @@ class MonteCarloAgent:
         # Penalize for each block in the newly placed piece that has a void beneath it
         if overhangs > 0:
             o_factor = self.params['overhang_penalty'] / 100.0
-            overhang_penalty = overhangs * o_factor * 20
+            overhang_penalty = overhangs * o_factor * 10
             reward -= overhang_penalty
             
         # 5. High Stacking Penalty
