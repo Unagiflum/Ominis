@@ -200,8 +200,8 @@ class Game:
 
     def update_score(self, lines):
         if lines > 0:
-            points = [0, 100, 300, 500, 800, 1200]
-            self.score += points[min(lines, 5)] * self.level
+            # Quadratic scoring: 100 * lines^2 * level
+            self.score += 100 * (lines ** 2) * self.level
             self.lines_cleared_total += lines
             
             if self.lines_cleared_total >= self.level * 5:
@@ -949,7 +949,7 @@ class Game:
             chk_x = group_x + 20 # Padding inside box
             self.chk_pent_rect = self.ui.draw_checkbox(chk_x, start_y, self.include_pentominoes, "Pentominoes (5)", mouse_pos)
             self.chk_tet_rect = self.ui.draw_checkbox(chk_x, start_y + 40, self.include_tetrominoes, "Tetrominoes (4)", mouse_pos)
-            self.chk_omi_rect = self.ui.draw_checkbox(chk_x, start_y + 80, self.include_ominis, "Twos and Threes", mouse_pos)
+            self.chk_omi_rect = self.ui.draw_checkbox(chk_x, start_y + 80, self.include_ominis, "Oligominoes (<4)", mouse_pos)
             
             # Start Button
             active = self.include_pentominoes or self.include_tetrominoes or self.include_ominis
