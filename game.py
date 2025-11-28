@@ -674,7 +674,9 @@ class Game:
     def handle_game_over(self):
         self.state = "GAMEOVER"
         self.audio.stop()
-        print(f"Game Over, Pieces: {self.pieces_locked}, Lines: {self.lines_cleared_total}")
+        # Only print if NOT in training (finish_training_round handles it for training)
+        if self.state != "TRAINING" and self.state != "TRAIN_MENU": 
+             print(f"Game Over, Pieces: {self.pieces_locked}, Lines: {self.lines_cleared_total}")
 
     def queue_current_trajectory(self):
         """Move the current piece trajectory into the rolling buffer."""
@@ -698,7 +700,11 @@ class Game:
 
     def finish_training_round(self):
         """Handle end-of-game bookkeeping and restart training."""
-        print(f"Game Over, Pieces: {self.pieces_locked}, Lines: {self.lines_cleared_total}")
+        if self.train_params.get('short_games', False):
+            if self.lines_cleared_total > 0:
+                print(f"Short game, Lines: {self.lines_cleared_total}")
+        else:
+            print(f"Game Over, Pieces: {self.pieces_locked}, Lines: {self.lines_cleared_total}")
         self.state = "TRAINING" # Restore state BEFORE reset so it knows to use training params
         self.reset() # Auto-restart during training
         if not self.train_params['visual_mode']:
