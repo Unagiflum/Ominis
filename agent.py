@@ -20,7 +20,7 @@ class MonteCarloAgent:
         
         # Hyperparameters
         self.batch_size = 128
-        self.gamma = 0.6  # Only used if we decide to discount within trajectory
+        self.gamma = 0.6
         self.epsilon = 1.0
         self.epsilon_min = self.params.get('epsilon_min_percent', 15) / 100.0
         self.epsilon_decay = 0.999
@@ -176,6 +176,31 @@ class MonteCarloAgent:
         """
         self.memory.append((state, action, R_piece))
 
+    def _mirror_state_action(self, state, action):
+        """
+        Horizontally mirror the state (board channels + next piece) and action.
+        
+        Returns:
+            mirrored_state: (mirrored_grid_input, mirrored_next_piece_input)
+            mirrored_action: [mirrored_lateral, mirrored_rotation]
+        """
+        grid_input, next_piece_input = state
+
+        # Flip spatial channels horizontally (width axis)
+        mirrored_grid = np.flip(np.array(grid_input), axis=2).copy()
+
+        # Next piece is flattened 10x10; flip horizontally and flatten again
+        next_piece_grid = np.array(next_piece_input).reshape(10, 10)
+        mirrored_next_piece = np.flip(next_piece_grid, axis=1).reshape(-1).astype(np.float32)
+
+        # Map actions: Left <-> Right, CCW <-> CW, Stay stays
+        mirrored_action = [
+            2 - action[0],  # lateral mapping: 0<->2, 1 stays
+            2 - action[1]   # rotation mapping: 0<->2, 1 stays
+        ]
+
+        return (mirrored_grid, mirrored_next_piece), mirrored_action
+
     def replay(self):
         """
         Train the network on a batch of experiences using Monte Carlo returns.
@@ -199,6 +224,13 @@ class MonteCarloAgent:
             grid_batch.append(state[0])
             next_piece_batch.append(state[1])
             action_batch.append(action)
+            R_piece_batch.append(R_piece)
+
+            # Add mirrored counterpart to enforce left-right symmetry
+            mirrored_state, mirrored_action = self._mirror_state_action(state, action)
+            grid_batch.append(mirrored_state[0])
+            next_piece_batch.append(mirrored_state[1])
+            action_batch.append(mirrored_action)
             R_piece_batch.append(R_piece)
             
         # Convert to tensors
