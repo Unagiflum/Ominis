@@ -292,16 +292,15 @@ class UI:
         
         current_y += arch_height + 20
         
-        
         # --- Reward / Curriculum Group ---
         reward_height = 270
         self.draw_group_box(padding, current_y, left_pane_width, reward_height, "Reward & Curriculum")
         
         sy = current_y + 40
-        # Min Randomness % (1% - 50%)
-        # Range 1-50, span 49.
-        min_rand = params.get('epsilon_min_percent', 15)
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (min_rand - 1) / 49.0, f"Min. Randomness: {min_rand}%", mouse_pos, self.small_font, active=not is_training)
+        # Min Randomness % (0% - 10%)
+        # Range 0-10, span 10.
+        min_rand = params.get('epsilon_min_percent', 5)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, min_rand / 10.0, f"Min. Randomness: {min_rand}%", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['epsilon_min_percent'] = s_rect
         sy += 50
         
@@ -317,7 +316,7 @@ class UI:
         s_rect = self.draw_slider(slider_x, sy, slider_width, (params['max_size'] - 1) / 4.0, f"Max Piece Size: {params['max_size']}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['max_size'] = s_rect
         sy += 50
-
+        
         # Pieces tracked (reward buffer size)
         pieces_tracked = max(1, min(20, params.get('pieces_tracked', 10)))
         s_rect = self.draw_slider(slider_x, sy, slider_width, (pieces_tracked - 1) / 19.0, f"Pieces Tracked: {pieces_tracked}", mouse_pos, self.small_font, active=not is_training)

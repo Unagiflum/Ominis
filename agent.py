@@ -22,7 +22,7 @@ class MonteCarloAgent:
         self.batch_size = 128 # Batch size when training is applied (note that it's doubled with mirroring)
         self.gamma = 0.5 #(discount factor for Monte Carlo return, prioritizes most recent moves)
         self.epsilon = 1.0 # Initial exploration rate
-        self.epsilon_min = self.params.get('epsilon_min_percent', 15) / 100.0 # Minimum exploration rate
+        self.epsilon_min = self.params.get('epsilon_min_percent', 5) / 100.0 # Minimum exploration rate (Default 5%)
         self.epsilon_decay = 0.999 # Decay per training step
         self.learning_rate = self.params.get('learning_rate', 0.0005)
         self.memory = deque(maxlen=30000) # Replay memory for experience tuples
@@ -122,8 +122,12 @@ class MonteCarloAgent:
         with torch.no_grad():
             lat_q, rot_q = self.model(grid_tensor, next_tensor)
             
-        lat = torch.argmax(lat_q).item()
-        rot = torch.argmax(rot_q).item()
+        # Categorical Sampling from Softmax distribution
+        lat_probs = F.softmax(lat_q, dim=-1)
+        rot_probs = F.softmax(rot_q, dim=-1)
+        
+        lat = torch.multinomial(lat_probs, 1).item()
+        rot = torch.multinomial(rot_probs, 1).item()
         
         return [lat, rot]
 
@@ -276,7 +280,7 @@ class MonteCarloAgent:
 
     def update_hyperparameters(self):
         """Update hyperparameters from self.params (which are shared with UI)."""
-        self.epsilon_min = self.params.get('epsilon_min_percent', 15) / 100.0
+        self.epsilon_min = self.params.get('epsilon_min_percent', 5) / 100.0
         self.learning_rate = self.params.get('learning_rate', 0.0005)
         # If the floor increases, ensure current epsilon respects it
         self.epsilon = max(self.epsilon, self.epsilon_min)
@@ -316,4 +320,3 @@ class MonteCarloAgent:
         
         # Note: We don't load params from file, we use the current UI params
         # This ensures the slider values control the architecture
-

@@ -67,7 +67,7 @@ class Game:
             'hl_size_idx': 1, # 0=128, 1=256, 2=512
             'hl_count': 2,
             'hl_count': 2,
-            'epsilon_min_percent': 15,
+            'epsilon_min_percent': 5,
             'learning_rate': 0.0005,
             'max_size': 5,
             'pieces_tracked': 10,
