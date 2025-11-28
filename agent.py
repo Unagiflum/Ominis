@@ -22,9 +22,9 @@ class MonteCarloAgent:
         self.batch_size = 128
         self.gamma = 0.99  # Only used if we decide to discount within trajectory
         self.epsilon = 1.0
-        self.epsilon_min = 0.15
+        self.epsilon_min = self.params.get('epsilon_min_percent', 15) / 100.0
         self.epsilon_decay = 0.999
-        self.learning_rate = 0.001
+        self.learning_rate = self.params.get('learning_rate', 0.0005)
         self.memory = deque(maxlen=30000)
         
         # Device
@@ -239,6 +239,15 @@ class MonteCarloAgent:
 
 
 
+
+    def update_hyperparameters(self):
+        """Update hyperparameters from self.params (which are shared with UI)."""
+        self.epsilon_min = self.params.get('epsilon_min_percent', 15) / 100.0
+        self.learning_rate = self.params.get('learning_rate', 0.0005)
+        
+        # Update optimizer learning rate
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = self.learning_rate
 
     def save(self, path):
         """

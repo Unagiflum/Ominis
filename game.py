@@ -67,8 +67,9 @@ class Game:
             'visual_mode': True,
             'hl_size_idx': 1, # 0=128, 1=256, 2=512
             'hl_count': 2,
-            'height_penalty': 50,
-            'overhang_penalty': 50,
+            'hl_count': 2,
+            'epsilon_min_percent': 15,
+            'learning_rate': 0.0005,
             'max_size': 5,
             'pieces_tracked': 10,
             'short_games': False
@@ -714,9 +715,9 @@ class Game:
 
         # Move Budgets
         budget = {
-            "LATERAL": 3,
+            "LATERAL": 1,
             "VERTICAL": 3,
-            "ROTATION": 3
+            "ROTATION": 1
         }
 
         for move in moves:
@@ -842,11 +843,17 @@ class Game:
 
             # Decide if we should pay out rewards now (line clear or game end)
             reward_event = None
-            if lines_cleared > 0:
-                reward_event = self.agent.calculate_reward(lines_cleared, False)
-            elif done and not piece_limit_reached:
-                # Only penalize true game overs (not short game limit)
-                reward_event = self.agent.calculate_reward(0, self.state == "GAMEOVER")
+            
+            # Check for Game Over first (highest priority/impact)
+            is_game_over = (self.state == "GAMEOVER")
+            
+            # Calculate reward
+            # If we cleared lines AND died, we should probably just count the death?
+            # Or sum them? Let's sum them to be safe, but Game Over is -1000 and Clear is +350*N^2.
+            # If I clear 1 line (+350) and die (-1000), result is -650. This seems fair.
+            
+            if lines_cleared > 0 or (done and not piece_limit_reached):
+                 reward_event = self.agent.calculate_reward(lines_cleared, is_game_over)
 
             if reward_event is not None:
                 # Apply reward after the clear animation finishes (visual mode)
@@ -1173,14 +1180,17 @@ class Game:
             # Map 0-1 to 1, 2, 3, 4
             count = 1 + int(val * 3.99)
             self.train_params['hl_count'] = count
-        elif self.active_slider == 'height_penalty':
-            # Map 0-1 to 0-100, step 10
-            raw = int(val * 100)
-            self.train_params['height_penalty'] = round(raw / 10) * 10
-        elif self.active_slider == 'overhang_penalty':
-            # Map 0-1 to 0-100, step 10
-            raw = int(val * 100)
-            self.train_params['overhang_penalty'] = round(raw / 10) * 10
+        elif self.active_slider == 'epsilon_min_percent':
+            # Map 0-1 to 1-50
+            val_percent = 1 + int(val * 49.99)
+            self.train_params['epsilon_min_percent'] = val_percent
+            if self.agent: self.agent.update_hyperparameters()
+        elif self.active_slider == 'learning_rate':
+            # Map 0-1 to 0.0001 - 0.001
+            # Range 0.0009
+            lr = 0.0001 + (val * 0.0009)
+            self.train_params['learning_rate'] = round(lr, 5)
+            if self.agent: self.agent.update_hyperparameters()
         elif self.active_slider == 'max_size':
             # Map 0-1 to 1, 2, 3, 4, 5
             size = 1 + int(val * 4.99)

@@ -292,19 +292,24 @@ class UI:
         
         current_y += arch_height + 20
         
+        
         # --- Reward / Curriculum Group ---
         reward_height = 270
         self.draw_group_box(padding, current_y, left_pane_width, reward_height, "Reward & Curriculum")
         
         sy = current_y + 40
-        # Height Penalty
-        s_rect = self.draw_slider(slider_x, sy, slider_width, params['height_penalty'] / 100.0, f"Height Penalty: {params['height_penalty']}%", mouse_pos, self.small_font, active=not is_training)
-        if not is_training: slider_rects['height_penalty'] = s_rect
+        # Min Randomness % (1% - 50%)
+        # Range 1-50, span 49.
+        min_rand = params.get('epsilon_min_percent', 15)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (min_rand - 1) / 49.0, f"Min. Randomness: {min_rand}%", mouse_pos, self.small_font, active=not is_training)
+        if not is_training: slider_rects['epsilon_min_percent'] = s_rect
         sy += 50
         
-        # Overhang Penalty
-        s_rect = self.draw_slider(slider_x, sy, slider_width, params['overhang_penalty'] / 100.0, f"Overhang Penalty: {params['overhang_penalty']}%", mouse_pos, self.small_font, active=not is_training)
-        if not is_training: slider_rects['overhang_penalty'] = s_rect
+        # Learning Rate (0.0001 - 0.001)
+        # Range 0.0009.
+        lr = params.get('learning_rate', 0.0005)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (lr - 0.0001) / 0.0009, f"Learning Rate: {lr:.4f}", mouse_pos, self.small_font, active=not is_training)
+        if not is_training: slider_rects['learning_rate'] = s_rect
         sy += 50
         
         # Max Polyomino Size (1, 2, 3, 4, 5)
