@@ -19,13 +19,13 @@ class MonteCarloAgent:
         self.params = train_params
         
         # Hyperparameters
-        self.batch_size = 128
-        self.gamma = 0.6
-        self.epsilon = 1.0
-        self.epsilon_min = self.params.get('epsilon_min_percent', 15) / 100.0
-        self.epsilon_decay = 0.999
+        self.batch_size = 128 # Batch size when training is applied (note that it's doubled with mirroring)
+        self.gamma = 0.6 (discount factor for Monte Carlo return, prioritizes most recent moves)
+        self.epsilon = 1.0 # Initial exploration rate
+        self.epsilon_min = self.params.get('epsilon_min_percent', 15) / 100.0 # Minimum exploration rate
+        self.epsilon_decay = 0.999 # Decay per training step
         self.learning_rate = self.params.get('learning_rate', 0.0005)
-        self.memory = deque(maxlen=30000)
+        self.memory = deque(maxlen=30000) # Replay memory for experience tuples
         
         # Device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
