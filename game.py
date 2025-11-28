@@ -6,7 +6,6 @@ from tetrominoes import Pentomino
 from input_manager import InputManager
 from ui import UI
 from audio import AudioPlayer
-from agent import MonteCarloAgent
 
 class Game:
     def __init__(self):
@@ -128,6 +127,23 @@ class Game:
                 print("Loaded settings from settings.json")
             except Exception as e:
                 print(f"Failed to load settings: {e}")
+
+    def create_agent(self):
+        """Lazily import and build the AI agent so the game can start without PyTorch installed."""
+        try:
+            from agent import MonteCarloAgent
+        except ImportError as e:
+            print(f"AI features unavailable (missing dependency): {e}")
+            return None
+        except Exception as e:
+            print(f"Failed to import AI agent: {e}")
+            return None
+
+        try:
+            return MonteCarloAgent(self.train_params)
+        except Exception as e:
+            print(f"Failed to initialize AI agent: {e}")
+            return None
 
     def save_settings(self):
         import json
@@ -353,23 +369,27 @@ class Game:
                                 self.audio.stop()
                         elif self.btn_watch_rect and self.btn_watch_rect.collidepoint(mouse_pos):
                             if self.include_pentominoes or self.include_tetrominoes or self.include_ominis:
-                                self.reset()
-                                # Initialize agent for watching
-                                # We need some default params for the agent structure
-                                # Let's use the current train_params
-                                self.agent = MonteCarloAgent(self.train_params)
-                                import os
-                                model_file = self.get_model_filename()
-                                if os.path.exists(model_file):
-                                    try:
-                                        self.agent.load(model_file)
-                                        print(f"Loaded model {model_file} for watching.")
-                                    except Exception as e:
-                                        print(f"Failed to load model {model_file}: {e}")
-                                    except Exception as e:
-                                        print(f"Failed to load model for watching: {e}")
-                                
-                                self.state = "WATCH_AI"
+                                agent = self.create_agent()
+                                if agent:
+                                    self.reset()
+                                    # Initialize agent for watching
+                                    # We need some default params for the agent structure
+                                    # Let's use the current train_params
+                                    self.agent = agent
+                                    import os
+                                    model_file = self.get_model_filename()
+                                    if os.path.exists(model_file):
+                                        try:
+                                            self.agent.load(model_file)
+                                            print(f"Loaded model {model_file} for watching.")
+                                        except Exception as e:
+                                            print(f"Failed to load model {model_file}: {e}")
+                                        except Exception as e:
+                                            print(f"Failed to load model for watching: {e}")
+                                    self.state = "WATCH_AI"
+                                else:
+                                    self.agent = None
+                                    print("Watch AI requires the AI dependencies; staying in the menu.")
 
             elif self.state == "TRAIN_MENU":
                 if event.type == pygame.MOUSEBUTTONDOWN:
@@ -381,28 +401,33 @@ class Game:
                         elif hasattr(self, 'short_games_chk_rect') and self.short_games_chk_rect and self.short_games_chk_rect.collidepoint(event.pos):
                             self.train_params['short_games'] = not self.train_params.get('short_games', False)
                         elif self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
-                            self.reset()
-                            self.agent = MonteCarloAgent(self.train_params)
-                            # Try to load existing model
-                            import os
-                            model_file = self.get_model_filename()
-                            if os.path.exists(model_file):
-                                try:
-                                    self.agent.load(model_file)
-                                    print(f"Loaded existing model {model_file}.")
-                                except Exception as e:
-                                    print(f"Failed to load model {model_file}: {e}")
+                            agent = self.create_agent()
+                            if agent:
+                                self.agent = agent
+                                self.reset()
+                                # Try to load existing model
+                                import os
+                                model_file = self.get_model_filename()
+                                if os.path.exists(model_file):
+                                    try:
+                                        self.agent.load(model_file)
+                                        print(f"Loaded existing model {model_file}.")
+                                    except Exception as e:
+                                        print(f"Failed to load model {model_file}: {e}")
+                                else:
+                                    print(f"No existing model found for {model_file}, starting fresh.")
+                                
+                                self.save_settings()
+                                
+                                self.state = "TRAINING"
+                                if not self.train_params['visual_mode']:
+                                    self.audio.stop() # No music in headless
+                                
+                                # Initialize auto-save timer
+                                self.last_save_time = pygame.time.get_ticks()
                             else:
-                                print(f"No existing model found for {model_file}, starting fresh.")
-                            
-                            self.save_settings()
-                            
-                            self.state = "TRAINING"
-                            if not self.train_params['visual_mode']:
-                                self.audio.stop() # No music in headless
-                            
-                            # Initialize auto-save timer
-                            self.last_save_time = pygame.time.get_ticks()
+                                self.agent = None
+                                print("Training requires the AI dependencies; staying in the Train menu.")
                         
                         # Check sliders
                         for name, rect in self.train_slider_rects.items():
