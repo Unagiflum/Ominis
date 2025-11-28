@@ -404,8 +404,6 @@ class Game:
                                             print(f"Loaded model {model_file} for watching.")
                                         except Exception as e:
                                             print(f"Failed to load model {model_file}: {e}")
-                                        except Exception as e:
-                                            print(f"Failed to load model for watching: {e}")
                                     self.state = "WATCH_AI"
                                 else:
                                     self.agent = None

@@ -278,6 +278,8 @@ class MonteCarloAgent:
         """Update hyperparameters from self.params (which are shared with UI)."""
         self.epsilon_min = self.params.get('epsilon_min_percent', 15) / 100.0
         self.learning_rate = self.params.get('learning_rate', 0.0005)
+        # If the floor increases, ensure current epsilon respects it
+        self.epsilon = max(self.epsilon, self.epsilon_min)
         
         # Update optimizer learning rate
         for param_group in self.optimizer.param_groups:
