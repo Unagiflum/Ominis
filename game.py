@@ -702,7 +702,11 @@ class Game:
         """Handle end-of-game bookkeeping and restart training."""
         if self.train_params.get('short_games', False):
             if self.lines_cleared_total > 0:
-                print(f"Short game, Lines: {self.lines_cleared_total}")
+                import random
+                import string
+                pieces_tracked = self.get_pieces_tracked_limit()
+                random_letter = random.choice(string.ascii_uppercase)
+                print(f"Short game, Lines: {self.lines_cleared_total}, {pieces_tracked} Pieces, {random_letter}")
         else:
             print(f"Game Over, Pieces: {self.pieces_locked}, Lines: {self.lines_cleared_total}")
         self.state = "TRAINING" # Restore state BEFORE reset so it knows to use training params
