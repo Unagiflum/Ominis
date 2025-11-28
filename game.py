@@ -197,10 +197,30 @@ class Game:
 
 
     def spawn_piece(self):
-        p = Pentomino(self.grid_width // 2, 0, self.allowed_shapes)
-        # Adjust y to ensure the shape starts just above the board
-        # We want the lowest block (max_y) to be at y = -1
-        max_y = max(y for x, y in p.shape)
+        """Spawn a piece centered by its bounding box with an unbiased tie-break."""
+        p = Pentomino(0, 0, self.allowed_shapes)
+
+        # Bounding box in the current (already randomized) rotation
+        min_x = min(x for x, _ in p.shape)
+        max_x = max(x for x, _ in p.shape)
+        width = max_x - min_x + 1
+
+        ideal_left = (self.grid_width - width) / 2  # may be .5 on even widths
+
+        # If perfectly half-cell, alternate left/right to avoid bias
+        frac = ideal_left - math.floor(ideal_left)
+        if abs(frac - 0.5) < 1e-6:
+            if not hasattr(self, "spawn_parity"):
+                self.spawn_parity = 0
+            ideal_left = math.floor(ideal_left) + self.spawn_parity
+            self.spawn_parity ^= 1
+        else:
+            ideal_left = round(ideal_left)
+
+        p.x = int(ideal_left - min_x)
+
+        # Start just above the board; keep lowest block at y = -1
+        max_y = max(y for _, y in p.shape)
         p.y = -max_y - 1
         return p
 
