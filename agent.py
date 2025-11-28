@@ -20,7 +20,7 @@ class MonteCarloAgent:
         
         # Hyperparameters
         self.batch_size = 128
-        self.gamma = 0.99  # Only used if we decide to discount within trajectory
+        self.gamma = 0.6  # Only used if we decide to discount within trajectory
         self.epsilon = 1.0
         self.epsilon_min = self.params.get('epsilon_min_percent', 15) / 100.0
         self.epsilon_decay = 0.999
@@ -153,9 +153,11 @@ class MonteCarloAgent:
         for i in range(len(trajectory)):
             state, action, next_state = trajectory[i]
             
-            # Monte Carlo: All steps get the same final return R_piece
-            # For discounted returns, use: R_piece * (gamma ** (len(trajectory) - 1 - i))
-            R_piece = final_reward
+            # Monte Carlo: Apply gamma discount to the final reward
+            # The last move (index len-1) gets final_reward * gamma^0 = final_reward
+            # The move before that gets final_reward * gamma^1, etc.
+            steps_from_end = len(trajectory) - 1 - i
+            R_piece = final_reward * (self.gamma ** steps_from_end)
             
             # Store simplified tuple: (state, action, R_piece)
             # We don't need next_state since we're not doing TD bootstrapping.
