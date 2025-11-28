@@ -952,15 +952,43 @@ class Game:
                     self.step_ai_training()
                     self.fall_time = current_time
             else:
-                # Headless Mode: Run as fast as possible within a time budget
-                # Keep UI responsive (10 FPS target -> ~100ms per frame)
-                # Let's use ~100ms for training, leaving time for draw/events.
+
+                # Headless Mode: Run as fast as possible
+                # We loop until we detect user input or a refresh timer expires
                 
-                start_train = pygame.time.get_ticks()
-                while pygame.time.get_ticks() - start_train < 100:
-                    self.step_ai_training()
-                    # Break if we've done too many to prevent infinite loops if clock is weird
-                    # (Optional safety)
+                # Initialize refresh timer if needed
+                if not hasattr(self, 'last_headless_draw'):
+                    self.last_headless_draw = current_time
+                
+                # If we just drew (or it's been > 1000ms), let's loop
+                # But if we just returned to let draw happen, we need to reset the timer?
+                # Actually, the logic should be:
+                # 1. If input pending, return immediately.
+                # 2. If time to draw (1s elapsed), return immediately.
+                # 3. Otherwise, run a batch of steps.
+                
+                # Check for forced refresh (e.g. to show stats)
+                if current_time - self.last_headless_draw > 1000:
+                    self.last_headless_draw = current_time
+                    return # Return to allow draw()
+                
+                steps_per_check = 20
+                while True:
+                    # Run a batch of steps
+                    for _ in range(steps_per_check):
+                        self.step_ai_training()
+                    
+                    # Check for user input (responsiveness)
+                    # peek returns True if any of the types are in the queue
+                    if pygame.event.peek([pygame.QUIT, pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN]):
+                        # Input detected! Return to let handle_input process it next frame
+                        # We also reset the draw timer so we draw immediately to show feedback
+                        self.last_headless_draw = 0 
+                        return
+                    
+                    # Check refresh timer
+                    if pygame.time.get_ticks() - self.last_headless_draw > 1000:
+                        return
                 
         elif self.state == "ANIMATING_CLEAR":
             if current_time - self.animation_timer > 200: # 200ms flash
@@ -1215,9 +1243,10 @@ class Game:
             
             if self.state == "TRAINING" and not self.train_params['visual_mode']:
                 # Headless Mode
-                # Still draw every frame to keep UI responsive
+                # Draw is called either when input is detected or every ~1s
                 self.draw()
-                self.clock.tick(60) # Cap at 60 FPS so we don't burn CPU just drawing UI
+                # Do NOT tick clock, we want max speed
+                # self.clock.tick(60) 
             else:
                 self.draw()
                 self.clock.tick(60)
