@@ -21,9 +21,9 @@ class MonteCarloAgent:
         # Hyperparameters
         self.batch_size = 2000 # Batch size when training is applied (note that it's doubled with mirroring)
         self.gamma = 0.7 #(discount factor for Monte Carlo return, prioritizes most recent moves)
-        self.epsilon = 1.0 # Initial exploration rate
+        self.epsilon = 0.8 # Initial exploration rate
         self.epsilon_min = self.params.get('epsilon_min_percent', 5) / 100.0 # Minimum exploration rate (Default 5%)
-        self.epsilon_decay = 0.99 # Decay per training step
+        self.epsilon_decay = 0.95 # Decay per training step
         self.learning_rate = self.params.get('learning_rate', 0.001)
         self.memory = deque(maxlen=10000) # Replay memory for experience tuples
         self.samples_since_train = 0
