@@ -68,7 +68,7 @@ class Game:
             'hl_count': 2,
             'hl_count': 2,
             'epsilon_min_percent': 5,
-            'learning_rate': 0.0005,
+            'learning_rate': 0.001,
             'max_size': 5,
             'pieces_tracked': 10,
             'short_games': False
@@ -124,6 +124,8 @@ class Game:
                     for k, v in saved_params.items():
                         if k in self.train_params:
                             self.train_params[k] = v
+                # Clamp learning rate to supported slider range
+                self.train_params['learning_rate'] = max(0.001, min(0.01, self.train_params.get('learning_rate', 0.001)))
                 print("Loaded settings from settings.json")
             except Exception as e:
                 print(f"Failed to load settings: {e}")
@@ -1019,7 +1021,7 @@ class Game:
                     self.last_headless_draw = current_time
                     return # Return to allow draw()
                 
-                steps_per_check = 20
+                steps_per_check = 500
                 while True:
                     # Run a batch of steps
                     for _ in range(steps_per_check):
@@ -1267,9 +1269,8 @@ class Game:
             self.train_params['epsilon_min_percent'] = max(0, min(10, val_percent))
             if self.agent: self.agent.update_hyperparameters()
         elif self.active_slider == 'learning_rate':
-            # Map 0-1 to 0.0001 - 0.001
-            # Range 0.0009
-            lr = 0.0001 + (val * 0.0009)
+            # Map 0-1 to 0.0010 - 0.0100
+            lr = 0.001 + (val * 0.009)
             self.train_params['learning_rate'] = round(lr, 5)
             if self.agent: self.agent.update_hyperparameters()
         elif self.active_slider == 'max_size':
