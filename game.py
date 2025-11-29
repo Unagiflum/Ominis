@@ -824,6 +824,8 @@ class Game:
         
         # 2. Select Action
         action = self.agent.select_action(state)
+        # Count every inference step, even if it is later discarded from memory
+        self.agent.record_inference_step()
         lat_idx, rot_idx = action
         
         # Map indices to moves

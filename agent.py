@@ -30,9 +30,7 @@ class MonteCarloAgent:
         self.train_trigger_interval = 1000
         self.lines_since_train = 0
         self.gameovers_since_train = 0
-        self.total_moves = 0
-        self.total_lines = 0
-        self.total_gameovers = 0
+        self.inference_moves_since_train = 0
         
         # Device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -148,7 +146,7 @@ class MonteCarloAgent:
         if game_over:
             reward -= 1000
 
-        return reward
+        return -reward
 
 
 
@@ -193,12 +191,13 @@ class MonteCarloAgent:
         """
         self.samples_since_train += samples_added
         self.lines_since_train += lines_cleared
-        self.total_moves += samples_added
-        self.total_lines += lines_cleared
         if is_game_over:
             self.gameovers_since_train += 1
-            self.total_gameovers += 1
         self._maybe_train()
+
+    def record_inference_step(self, moves=1):
+        """Count inference decisions made since the last training update."""
+        self.inference_moves_since_train += moves
 
     def _maybe_train(self):
         """
@@ -212,20 +211,23 @@ class MonteCarloAgent:
         moves = self.samples_since_train
         lines = self.lines_since_train
         gos = self.gameovers_since_train
-        total_moves = self.total_moves
-        total_lines = self.total_lines
+        inference_moves = self.inference_moves_since_train
 
         self.replay()
+        # Per-window moves/line based on inference decisions, not just stored samples
         if lines > 0:
-            moves_per_line = total_moves / lines
+            moves_per_line = inference_moves / lines
             mpline_str = f"{moves_per_line:.1f}"
         else:
             mpline_str = "N/A"
-        print(f"Trained on {moves} moves; {lines} lines in {total_moves} total moves; {gos} Game Overs; Moves per line: {mpline_str};")
+
+        epsilon_str = f"{self.epsilon:.3f}"
+        print(f"Trained on {moves} moves; {lines} lines in {inference_moves} moves made; Moves / Line = {mpline_str}; Epsilon: {epsilon_str}")
 
         self.samples_since_train = 0
         self.lines_since_train = 0
         self.gameovers_since_train = 0
+        self.inference_moves_since_train = 0
 
     def _mirror_state_action(self, state, action):
         """
