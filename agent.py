@@ -25,7 +25,7 @@ class MonteCarloAgent:
         self.epsilon_min = self.params.get('epsilon_min_percent', 5) / 100.0 # Minimum exploration rate (Default 5%)
         self.epsilon_decay = 0.95 # Decay per training step
         self.learning_rate = self.params.get('learning_rate', 0.001)
-        self.memory = deque(maxlen=10000) # Replay memory for experience tuples
+        self.memory = deque(maxlen=3000) # Replay memory for experience tuples; about 10kB per move
         self.samples_since_train = 0
         self.train_trigger_interval = 1000
         self.lines_since_train = 0
