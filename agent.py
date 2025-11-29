@@ -222,7 +222,7 @@ class MonteCarloAgent:
             mpline_str = "N/A"
 
         epsilon_str = f"{self.epsilon:.3f}"
-        print(f"Trained on {moves} moves; {lines} lines in {inference_moves} moves made; Moves / Line = {mpline_str}; Epsilon: {epsilon_str}")
+        print(f"Appended {moves} moves to buffer; Made {lines} lines in {inference_moves} moves; Moves / Line = {mpline_str}; Epsilon: {epsilon_str}")
 
         self.samples_since_train = 0
         self.lines_since_train = 0
