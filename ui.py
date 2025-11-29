@@ -298,8 +298,8 @@ class UI:
         
         sy = current_y + 40
         # Min Randomness % (0% - 10%)
-        # Range 0-10, span 10.
-        min_rand = params.get('epsilon_min_percent', 5)
+        min_rand_raw = params.get('epsilon_min_percent', 5)
+        min_rand = max(0, min(10, min_rand_raw))
         s_rect = self.draw_slider(slider_x, sy, slider_width, min_rand / 10.0, f"Min. Randomness: {min_rand}%", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['epsilon_min_percent'] = s_rect
         sy += 50

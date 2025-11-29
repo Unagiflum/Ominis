@@ -1262,9 +1262,9 @@ class Game:
             count = 1 + int(val * 3.99)
             self.train_params['hl_count'] = count
         elif self.active_slider == 'epsilon_min_percent':
-            # Map 0-1 to 1-50
-            val_percent = 1 + int(val * 49.99)
-            self.train_params['epsilon_min_percent'] = val_percent
+            # Map 0-1 to 0-10
+            val_percent = int(val * 10)
+            self.train_params['epsilon_min_percent'] = max(0, min(10, val_percent))
             if self.agent: self.agent.update_hyperparameters()
         elif self.active_slider == 'learning_rate':
             # Map 0-1 to 0.0001 - 0.001

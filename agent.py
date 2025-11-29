@@ -141,7 +141,7 @@ class MonteCarloAgent:
         if game_over:
             reward -= 1000
 
-        return reward
+        return -reward
 
 
 
