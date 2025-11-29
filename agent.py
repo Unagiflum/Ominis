@@ -19,13 +19,20 @@ class MonteCarloAgent:
         self.params = train_params
         
         # Hyperparameters
-        self.batch_size = 128 # Batch size when training is applied (note that it's doubled with mirroring)
+        self.batch_size = 2000 # Batch size when training is applied (note that it's doubled with mirroring)
         self.gamma = 0.7 #(discount factor for Monte Carlo return, prioritizes most recent moves)
         self.epsilon = 1.0 # Initial exploration rate
         self.epsilon_min = self.params.get('epsilon_min_percent', 5) / 100.0 # Minimum exploration rate (Default 5%)
         self.epsilon_decay = 0.999 # Decay per training step
         self.learning_rate = self.params.get('learning_rate', 0.001)
-        self.memory = deque(maxlen=1280) # Replay memory for experience tuples
+        self.memory = deque(maxlen=10000) # Replay memory for experience tuples
+        self.samples_since_train = 0
+        self.train_trigger_interval = 1000
+        self.lines_since_train = 0
+        self.gameovers_since_train = 0
+        self.total_moves = 0
+        self.total_lines = 0
+        self.total_gameovers = 0
         
         # Device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -141,7 +148,7 @@ class MonteCarloAgent:
         if game_over:
             reward -= 1000
 
-        return -reward
+        return reward
 
 
 
@@ -179,6 +186,46 @@ class MonteCarloAgent:
             R_piece: Scalar Monte Carlo return for the piece trajectory
         """
         self.memory.append((state, action, R_piece))
+
+    def record_training_stats(self, samples_added, lines_cleared, is_game_over):
+        """
+        Track stats for when to trigger training.
+        """
+        self.samples_since_train += samples_added
+        self.lines_since_train += lines_cleared
+        self.total_moves += samples_added
+        self.total_lines += lines_cleared
+        if is_game_over:
+            self.gameovers_since_train += 1
+            self.total_gameovers += 1
+        self._maybe_train()
+
+    def _maybe_train(self):
+        """
+        Trigger training when enough new samples have been collected.
+        """
+        if self.samples_since_train < self.train_trigger_interval:
+            return
+        if len(self.memory) < self.batch_size:
+            return
+        # Capture stats for logging before reset
+        moves = self.samples_since_train
+        lines = self.lines_since_train
+        gos = self.gameovers_since_train
+        total_moves = self.total_moves
+        total_lines = self.total_lines
+
+        self.replay()
+        if lines > 0:
+            moves_per_line = total_moves / lines
+            mpline_str = f"{moves_per_line:.1f}"
+        else:
+            mpline_str = "N/A"
+        print(f"Trained on {moves} moves; {lines} lines in {total_moves} total moves; {gos} Game Overs; Moves per line: {mpline_str};")
+
+        self.samples_since_train = 0
+        self.lines_since_train = 0
+        self.gameovers_since_train = 0
 
     def _mirror_state_action(self, state, action):
         """

@@ -729,31 +729,24 @@ class Game:
             self.trajectory_buffer.append(self.current_trajectory[:])
         self.current_trajectory = []
 
-    def apply_reward_to_buffer(self, reward_value, done):
-        """Apply a reward to every step in the buffered trajectories."""
+    def apply_reward_to_buffer(self, reward_value, done, lines_cleared, is_game_over):
+        """Apply a reward to every step in the buffered trajectories and trigger training cadence."""
         if not self.agent:
             self.trajectory_buffer.clear()
             return
         if not self.trajectory_buffer:
             return
 
+        samples_added = 0
         for trajectory in self.trajectory_buffer:
             self.agent.add_trajectory_with_done(trajectory, reward_value, done)
+            samples_added += len(trajectory)
 
         self.trajectory_buffer.clear()
-        self.agent.replay()
+        self.agent.record_training_stats(samples_added, lines_cleared, is_game_over)
 
     def finish_training_round(self):
         """Handle end-of-game bookkeeping and restart training."""
-        if self.train_params.get('short_games', False):
-            if self.lines_cleared_total > 0:
-                import random
-                import string
-                pieces_tracked = self.get_pieces_tracked_limit()
-                random_letter = random.choice(string.ascii_uppercase)
-                print(f"Short game, Lines: {self.lines_cleared_total}, {pieces_tracked} Pieces, {random_letter}")
-        else:
-            print(f"Game Over, Pieces: {self.pieces_locked}, Lines: {self.lines_cleared_total}")
         self.state = "TRAINING" # Restore state BEFORE reset so it knows to use training params
         self.reset() # Auto-restart during training
         if not self.train_params['visual_mode']:
@@ -913,9 +906,9 @@ class Game:
             if reward_event is not None:
                 # Apply reward after the clear animation finishes (visual mode)
                 if self.state == "ANIMATING_CLEAR":
-                    self.pending_reward_event = (reward_event, done)
+                    self.pending_reward_event = (reward_event, done, lines_cleared, is_game_over)
                 else:
-                    self.apply_reward_to_buffer(reward_event, done)
+                    self.apply_reward_to_buffer(reward_event, done, lines_cleared, is_game_over)
                     if done:
                         self.finish_training_round()
             elif piece_limit_reached:
@@ -1078,8 +1071,8 @@ class Game:
                 
                 # Process pending reward if in training mode
                 if self.state == "TRAINING" and self.pending_reward_event is not None:
-                    reward_value, done_flag = self.pending_reward_event
-                    self.apply_reward_to_buffer(reward_value, done_flag)
+                    reward_value, done_flag, pending_lines, pending_game_over = self.pending_reward_event
+                    self.apply_reward_to_buffer(reward_value, done_flag, pending_lines, pending_game_over)
                     self.pending_reward_event = None
                     if done_flag:
                         self.finish_training_round()
