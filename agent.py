@@ -19,7 +19,7 @@ class MonteCarloAgent:
         self.params = train_params
         
         # Hyperparameters
-        self.batch_size = 2000 # Batch size when training is applied (note that it's doubled with mirroring)
+        self.batch_size = 1000 # Batch size when training is applied (note that it's doubled with mirroring)
         self.gamma = 0.7 #(discount factor for Monte Carlo return, prioritizes most recent moves)
         self.epsilon = 0.8 # Initial exploration rate
         self.epsilon_min = self.params.get('epsilon_min_percent', 5) / 100.0 # Minimum exploration rate (Default 5%)
@@ -222,7 +222,7 @@ class MonteCarloAgent:
             mpline_str = "N/A"
 
         epsilon_str = f"{self.epsilon:.3f}"
-        print(f"Appended {moves} moves to buffer; Made {lines} lines in {inference_moves} moves; Moves / Line = {mpline_str}; Epsilon: {epsilon_str}")
+        print(f"Pushed {moves} moves to buffer; Made {lines} lines in {inference_moves} moves; Moves / Line = {mpline_str}; Epsilon: {epsilon_str}")
 
         self.samples_since_train = 0
         self.lines_since_train = 0
