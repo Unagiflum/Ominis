@@ -85,6 +85,7 @@ class Game:
         self.training_step_count = 0
         self.current_trajectory = [] # Buffer for trajectory-based training
         self.trajectory_buffer = deque(maxlen=self.train_params['pieces_tracked'])
+        self.non_scoring_run = [] # Tracks consecutive non-scoring piece trajectories
         self.start_stats = (0, 0) # (Height, Holes) at start of piece
         self.last_save_time = 0 # Track last auto-save time
         
@@ -97,6 +98,7 @@ class Game:
         self.load_settings()
         # Ensure buffers respect any loaded settings (e.g., pieces_tracked)
         self.trajectory_buffer = deque(maxlen=self.get_pieces_tracked_limit())
+        self.non_scoring_run = []
 
     def get_model_filename(self):
         """Generates filename based on current architecture params."""
@@ -125,7 +127,7 @@ class Game:
                         if k in self.train_params:
                             self.train_params[k] = v
                 # Clamp learning rate to supported slider range
-                self.train_params['learning_rate'] = max(0.001, min(0.01, self.train_params.get('learning_rate', 0.001)))
+                self.train_params['learning_rate'] = max(0.0001, min(0.005, self.train_params.get('learning_rate', 0.001)))
                 print("Loaded settings from settings.json")
             except Exception as e:
                 print(f"Failed to load settings: {e}")
@@ -235,6 +237,7 @@ class Game:
         self.fall_speed = 1000
         self.current_trajectory = []
         self.trajectory_buffer = deque(maxlen=self.get_pieces_tracked_limit())
+        self.non_scoring_run = []
         self.pending_reward_event = None
         self.short_games_move_count = 0
         
@@ -725,9 +728,29 @@ class Game:
 
     def queue_current_trajectory(self):
         """Move the current piece trajectory into the rolling buffer."""
+        queued_piece = None
         if self.current_trajectory:
-            self.trajectory_buffer.append(self.current_trajectory[:])
+            queued_piece = self.current_trajectory[:]
+            self.trajectory_buffer.append(queued_piece)
         self.current_trajectory = []
+        return queued_piece
+
+    def _maybe_push_non_scoring_run(self):
+        """Push a non-scoring run into the agent buffer based on mode-specific thresholds."""
+        if not self.agent:
+            self.non_scoring_run = []
+            return
+
+        samples_added = 0
+        for trajectory in self.non_scoring_run:
+            self.agent.add_non_scoring_trajectory(trajectory)
+            samples_added += len(trajectory)
+
+        # Clear after pushing to avoid duplicate storage for overlapping runs
+        self.non_scoring_run = []
+        if samples_added > 0:
+            # No lines cleared; not a game over
+            self.agent.record_training_stats(samples_added, 0, False, is_scoring=False)
 
     def apply_reward_to_buffer(self, reward_value, done, lines_cleared, is_game_over):
         """Apply a reward to every step in the buffered trajectories and trigger training cadence."""
@@ -883,13 +906,30 @@ class Game:
                 self.short_games_move_count += 1
 
             # Move the locked piece trajectory into the rolling buffer (last N pieces)
-            self.queue_current_trajectory()
+            locked_piece_trajectory = self.queue_current_trajectory()
 
             # Short games: Check if we've reached the piece limit (N)
             pieces_limit = self.get_pieces_tracked_limit()
             if self.train_params.get('short_games', False) and self.short_games_move_count >= pieces_limit:
                 done = True  # Mark as done without triggering game over
                 piece_limit_reached = True
+
+            is_short_game = self.train_params.get('short_games', False)
+
+            # Track non-scoring runs (consecutive pieces with zero lines)
+            if locked_piece_trajectory and lines_cleared == 0:
+                self.non_scoring_run.append(locked_piece_trajectory)
+            else:
+                # Any scoring event resets the non-scoring streak
+                self.non_scoring_run = []
+
+            # Long-game non-scoring push: threshold = pieces_tracked + 1
+            if not is_short_game and len(self.non_scoring_run) >= pieces_limit + 1:
+                self._maybe_push_non_scoring_run()
+
+            # Short-game non-scoring push: if the capped game ends with zero total score
+            if is_short_game and piece_limit_reached and self.lines_cleared_total == 0:
+                self._maybe_push_non_scoring_run()
 
             # Decide if we should pay out rewards now (line clear or game end)
             reward_event = None
@@ -1264,8 +1304,8 @@ class Game:
             self.train_params['epsilon_min_percent'] = max(0, min(10, val_percent))
             if self.agent: self.agent.update_hyperparameters()
         elif self.active_slider == 'learning_rate':
-            # Map 0-1 to 0.0010 - 0.0100
-            lr = 0.001 + (val * 0.009)
+            # Map 0-1 to 0.0001 - 0.0050
+            lr = 0.0001 + (val * 0.0049)
             self.train_params['learning_rate'] = round(lr, 5)
             if self.agent: self.agent.update_hyperparameters()
         elif self.active_slider == 'max_size':

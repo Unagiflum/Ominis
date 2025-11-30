@@ -24,9 +24,14 @@ class MonteCarloAgent:
         self.epsilon = 1.00 # Initial exploration rate
         self.epsilon_min = self.params.get('epsilon_min_percent', 5) / 100.0 # Minimum exploration rate (Default 5%)
         self.epsilon_decay = 0.999 # Decay per training step
-        self.learning_rate = self.params.get('learning_rate', 0.001)
-        self.memory = deque(maxlen=1500) # Replay memory for experience tuples; about 10kB per move
-        self.samples_since_train = 0
+        lr = self.params.get('learning_rate', 0.001)
+        # Clamp to UI-supported range
+        lr = max(0.0001, min(0.005, lr))
+        self.learning_rate = lr
+        self.scoring_memory = deque(maxlen=5000) # Replay memory for scoring trajectories
+        self.non_scoring_memory = deque(maxlen=5000) # Replay memory for long non-scoring trajectories
+        self.total_samples_since_train = 0
+        self.scoring_samples_since_train = 0
         self.train_trigger_interval = 1000
         self.lines_since_train = 0
         self.gameovers_since_train = 0
@@ -171,10 +176,21 @@ class MonteCarloAgent:
             # Store simplified tuple: (state, action, R_piece)
             # We don't need next_state since we're not doing TD bootstrapping.
             # The 'done' flag is also not stored because R_piece is the full return.
-            self.remember(state, action, R_piece)
+            self.remember(state, action, R_piece, self.scoring_memory)
+
+    def add_non_scoring_trajectory(self, trajectory):
+        """
+        Add a non-scoring trajectory (zero-return) to the non-scoring buffer.
+        A non-scoring trajectory still applies discounting, but the base reward is 0.
+        """
+        for i in range(len(trajectory)):
+            state, action, next_state = trajectory[i]
+            steps_from_end = len(trajectory) - 1 - i
+            R_piece = 0.0 * (self.gamma ** steps_from_end)
+            self.remember(state, action, R_piece, self.non_scoring_memory)
 
 
-    def remember(self, state, action, R_piece):
+    def remember(self, state, action, R_piece, target_memory):
         """
         Store a (state, action, Monte Carlo return) tuple in replay memory.
         
@@ -183,13 +199,15 @@ class MonteCarloAgent:
             action: [lateral_idx, rotation_idx] list
             R_piece: Scalar Monte Carlo return for the piece trajectory
         """
-        self.memory.append((state, action, R_piece))
+        target_memory.append((state, action, R_piece))
 
-    def record_training_stats(self, samples_added, lines_cleared, is_game_over):
+    def record_training_stats(self, samples_added, lines_cleared, is_game_over, is_scoring=True):
         """
         Track stats for when to trigger training.
         """
-        self.samples_since_train += samples_added
+        self.total_samples_since_train += samples_added
+        if is_scoring:
+            self.scoring_samples_since_train += samples_added
         self.lines_since_train += lines_cleared
         if is_game_over:
             self.gameovers_since_train += 1
@@ -203,17 +221,20 @@ class MonteCarloAgent:
         """
         Trigger training when enough new samples have been collected.
         """
-        if self.samples_since_train < self.train_trigger_interval:
+        if self.scoring_samples_since_train < self.train_trigger_interval:
             return
-        if len(self.memory) < self.batch_size:
+        if len(self.scoring_memory) < self.batch_size:
             return
+        include_non_scoring = len(self.non_scoring_memory) >= self.batch_size
         # Capture stats for logging before reset
-        moves = self.samples_since_train
+        moves = self.total_samples_since_train
+        scoring_moves = self.scoring_samples_since_train
+        non_scoring_moves = max(0, moves - scoring_moves)
         lines = self.lines_since_train
         gos = self.gameovers_since_train
         inference_moves = self.inference_moves_since_train
 
-        self.replay()
+        self.replay(include_non_scoring=include_non_scoring)
         # Per-window moves/line based on inference decisions, not just stored samples
         if lines > 0:
             moves_per_line = inference_moves / lines
@@ -222,9 +243,10 @@ class MonteCarloAgent:
             mpline_str = "N/A"
 
         epsilon_str = f"{self.epsilon:.3f}"
-        print(f"Pushed {moves} moves to buffer; Made {lines} lines in {inference_moves} moves; Moves / Line = {mpline_str}; Epsilon: {epsilon_str}")
+        print(f"Pushed {scoring_moves} & {non_scoring_moves} moves to scoring & null buffers; Made {lines} lines in {inference_moves} moves; Moves / Line = {mpline_str}; Epsilon: {epsilon_str}")
 
-        self.samples_since_train = 0
+        self.total_samples_since_train = 0
+        self.scoring_samples_since_train = 0
         self.lines_since_train = 0
         self.gameovers_since_train = 0
         self.inference_moves_since_train = 0
@@ -254,18 +276,21 @@ class MonteCarloAgent:
 
         return (mirrored_grid, mirrored_next_piece), mirrored_action
 
-    def replay(self):
+    def replay(self, include_non_scoring=True):
         """
         Train the network on a batch of experiences using Monte Carlo returns.
         
         Loss: MSE between Q(state, action) and R_piece for chosen actions.
         No TD bootstrapping or target network involved.
         """
-        if len(self.memory) < self.batch_size:
+        if len(self.scoring_memory) < self.batch_size:
             return
-            
+        if include_non_scoring and len(self.non_scoring_memory) < self.batch_size:
+            include_non_scoring = False
+
         self.model.train()
-        minibatch = random.sample(self.memory, self.batch_size)
+        scoring_batch = random.sample(self.scoring_memory, self.batch_size)
+        non_scoring_batch = random.sample(self.non_scoring_memory, self.batch_size) if include_non_scoring else []
         
         # Prepare batches
         grid_batch = []
@@ -273,18 +298,19 @@ class MonteCarloAgent:
         action_batch = []
         R_piece_batch = []
         
-        for state, action, R_piece in minibatch:
-            grid_batch.append(state[0])
-            next_piece_batch.append(state[1])
-            action_batch.append(action)
-            R_piece_batch.append(R_piece)
+        for batch in (scoring_batch, non_scoring_batch):
+            for state, action, R_piece in batch:
+                grid_batch.append(state[0])
+                next_piece_batch.append(state[1])
+                action_batch.append(action)
+                R_piece_batch.append(R_piece)
 
-            # Add mirrored counterpart to enforce left-right symmetry
-            mirrored_state, mirrored_action = self._mirror_state_action(state, action)
-            grid_batch.append(mirrored_state[0])
-            next_piece_batch.append(mirrored_state[1])
-            action_batch.append(mirrored_action)
-            R_piece_batch.append(R_piece)
+                # Add mirrored counterpart to enforce left-right symmetry
+                mirrored_state, mirrored_action = self._mirror_state_action(state, action)
+                grid_batch.append(mirrored_state[0])
+                next_piece_batch.append(mirrored_state[1])
+                action_batch.append(mirrored_action)
+                R_piece_batch.append(R_piece)
             
         # Convert to tensors
         grid_tensor = torch.FloatTensor(np.array(grid_batch)).to(self.device)
@@ -332,7 +358,9 @@ class MonteCarloAgent:
     def update_hyperparameters(self):
         """Update hyperparameters from self.params (which are shared with UI)."""
         self.epsilon_min = self.params.get('epsilon_min_percent', 5) / 100.0
-        self.learning_rate = self.params.get('learning_rate', 0.001)
+        lr = self.params.get('learning_rate', 0.001)
+        lr = max(0.0001, min(0.005, lr))
+        self.learning_rate = lr
         # If the floor increases, ensure current epsilon respects it
         self.epsilon = max(self.epsilon, self.epsilon_min)
         

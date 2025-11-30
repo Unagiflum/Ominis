@@ -304,10 +304,10 @@ class UI:
         if not is_training: slider_rects['epsilon_min_percent'] = s_rect
         sy += 50
         
-        # Learning Rate (0.0010 - 0.0100)
+        # Learning Rate (0.0001 - 0.0050)
         lr = params.get('learning_rate', 0.001)
-        lr = max(0.001, min(0.01, lr))
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (lr - 0.001) / 0.009, f"Learning Rate: {lr:.4f}", mouse_pos, self.small_font, active=not is_training)
+        lr = max(0.0001, min(0.005, lr))
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (lr - 0.0001) / 0.0049, f"Learning Rate: {lr:.4f}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['learning_rate'] = s_rect
         sy += 50
         
