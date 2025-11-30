@@ -322,6 +322,8 @@ class MonteCarloAgent:
         # Decay epsilon
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
+        # Enforce minimum exploration rate so printed epsilon matches behavior
+        self.epsilon = max(self.epsilon, self.epsilon_min)
 
 
 
