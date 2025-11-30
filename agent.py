@@ -29,7 +29,7 @@ class MonteCarloAgent:
         lr = max(0.0001, min(0.005, lr))
         self.learning_rate = lr
         self.scoring_memory = deque(maxlen=1000) # Replay memory for scoring trajectories
-        self.non_scoring_memory = deque(maxlen=1000) # Replay memory for long non-scoring trajectories
+        self.non_scoring_memory = deque(maxlen=10000) # Replay memory for long non-scoring trajectories
         self.total_samples_since_train = 0
         self.scoring_samples_since_train = 0
         self.train_trigger_interval = 500
