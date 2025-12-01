@@ -151,7 +151,7 @@ class MonteCarloAgent:
         if game_over:
             reward -= 1000
 
-        return -reward
+        return reward
 
 
 
@@ -358,7 +358,7 @@ class MonteCarloAgent:
     def update_hyperparameters(self):
         """Update hyperparameters from self.params (which are shared with UI)."""
         self.epsilon_min = self.params.get('epsilon_min_percent', 5) / 100.0
-        lr = self.params.get('learning_rate', 0.001)
+        lr = self.params.get('learning_rate', 0.0001)
         lr = max(0.0001, min(0.005, lr))
         self.learning_rate = lr
         # If the floor increases, ensure current epsilon respects it
