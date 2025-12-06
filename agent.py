@@ -19,7 +19,7 @@ class MonteCarloAgent:
         self.params = train_params
         
         # Hyperparameters
-        self.batch_size = 5000 # Batch size for training (doubled with mirroring, doubled again with null sequences)
+        self.batch_size = 25000 # Batch size for training (doubled with mirroring, doubled again with null sequences)
         self.gamma = 0.7 #(discount factor for Monte Carlo return, prioritizes most recent moves)
         self.epsilon = 1.00 # Initial exploration rate
         self.epsilon_min = self.params.get('epsilon_min_percent', 5) / 100.0 # Minimum exploration rate (Default 5%)
@@ -28,9 +28,9 @@ class MonteCarloAgent:
         # Clamp to UI-supported range
         lr = max(0.0001, min(0.005, lr))
         self.learning_rate = lr
-        self.memory = deque(maxlen=10000) # Single replay memory for all trajectories
+        self.memory = deque(maxlen=50000) # Single replay memory for all trajectories
         self.total_samples_since_train = 0
-        self.train_trigger_interval = 5000
+        self.train_trigger_interval = 25000
         self.lines_since_train = 0
         self.gameovers_since_train = 0
         self.inference_moves_since_train = 0
