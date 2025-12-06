@@ -28,10 +28,8 @@ class MonteCarloAgent:
         # Clamp to UI-supported range
         lr = max(0.0001, min(0.005, lr))
         self.learning_rate = lr
-        self.scoring_memory = deque(maxlen=1000) # Replay memory for scoring trajectories
-        self.non_scoring_memory = deque(maxlen=10000) # Replay memory for long non-scoring trajectories
+        self.memory = deque(maxlen=10000) # Single replay memory for all trajectories
         self.total_samples_since_train = 0
-        self.scoring_samples_since_train = 0
         self.train_trigger_interval = 500
         self.lines_since_train = 0
         self.gameovers_since_train = 0
@@ -141,28 +139,48 @@ class MonteCarloAgent:
         
         return [lat, rot]
 
-    def calculate_reward(self, lines_cleared, game_over):
-        """Monte Carlo reward: only line clears (+) and game over (-)."""
+    def calculate_reward(self, lines_cleared, game_over, height_increased, blocks_over_holes):
+        """
+        Calculate reward for a piece placement.
+        
+        Args:
+            lines_cleared: Number of lines cleared (0-4+)
+            game_over: Whether the game ended
+            height_increased: True if max height rose after placement
+            blocks_over_holes: True if any new blocks are above blank spaces
+        
+        Returns:
+            Total reward for this piece placement
+        """
         reward = 0
 
+        # Lines: 350 * L^2
         if lines_cleared > 0:
             reward += 350 * (lines_cleared ** 2)
 
+        # Game over: -1000
         if game_over:
             reward -= 1000
+
+        # Placement quality
+        if not height_increased and not blocks_over_holes:
+            # Good placement: no height increase AND no blocks over holes
+            reward += 50
+        else:
+            # Bad placement: height increased OR blocks over holes
+            reward -= 20
 
         return reward
 
 
 
-    def add_trajectory_with_done(self, trajectory, final_reward, game_over):
+    def add_trajectory_with_done(self, trajectory, final_reward):
         """
         Add a complete piece trajectory to memory with Monte Carlo return.
         
         Args:
             trajectory: List of (state, action, next_state) tuples for one piece
             final_reward: R_piece - scalar Monte Carlo return for this piece
-            game_over: Whether the game ended (unused in current implementation)
         """
         for i in range(len(trajectory)):
             state, action, next_state = trajectory[i]
@@ -174,23 +192,10 @@ class MonteCarloAgent:
             R_piece = final_reward * (self.gamma ** steps_from_end)
             
             # Store simplified tuple: (state, action, R_piece)
-            # We don't need next_state since we're not doing TD bootstrapping.
-            # The 'done' flag is also not stored because R_piece is the full return.
-            self.remember(state, action, R_piece, self.scoring_memory)
-
-    def add_non_scoring_trajectory(self, trajectory):
-        """
-        Add a non-scoring trajectory (zero-return) to the non-scoring buffer.
-        A non-scoring trajectory still applies discounting, but the base reward is 0.
-        """
-        for i in range(len(trajectory)):
-            state, action, next_state = trajectory[i]
-            steps_from_end = len(trajectory) - 1 - i
-            R_piece = 0.0 * (self.gamma ** steps_from_end)
-            self.remember(state, action, R_piece, self.non_scoring_memory)
+            self.remember(state, action, R_piece)
 
 
-    def remember(self, state, action, R_piece, target_memory):
+    def remember(self, state, action, R_piece):
         """
         Store a (state, action, Monte Carlo return) tuple in replay memory.
         
@@ -199,15 +204,13 @@ class MonteCarloAgent:
             action: [lateral_idx, rotation_idx] list
             R_piece: Scalar Monte Carlo return for the piece trajectory
         """
-        target_memory.append((state, action, R_piece))
+        self.memory.append((state, action, R_piece))
 
-    def record_training_stats(self, samples_added, lines_cleared, is_game_over, is_scoring=True):
+    def record_training_stats(self, samples_added, lines_cleared, is_game_over):
         """
         Track stats for when to trigger training.
         """
         self.total_samples_since_train += samples_added
-        if is_scoring:
-            self.scoring_samples_since_train += samples_added
         self.lines_since_train += lines_cleared
         if is_game_over:
             self.gameovers_since_train += 1
@@ -221,21 +224,18 @@ class MonteCarloAgent:
         """
         Trigger training when enough new samples have been collected.
         """
-        if self.scoring_samples_since_train < self.train_trigger_interval:
+        if self.total_samples_since_train < self.train_trigger_interval:
             return
-        if len(self.scoring_memory) < self.batch_size:
+        if len(self.memory) < self.batch_size:
             return
-        include_non_scoring = len(self.non_scoring_memory) >= self.batch_size
+        
         # Capture stats for logging before reset
         moves = self.total_samples_since_train
-        scoring_moves = self.scoring_samples_since_train
-        non_scoring_moves = max(0, moves - scoring_moves)
         lines = self.lines_since_train
-        gos = self.gameovers_since_train
         inference_moves = self.inference_moves_since_train
 
-        self.replay(include_non_scoring=include_non_scoring)
-        # Per-window moves/line based on inference decisions, not just stored samples
+        self.replay()
+        # Per-window moves/line based on inference decisions
         if lines > 0:
             moves_per_line = inference_moves / lines
             mpline_str = f"{moves_per_line:.1f}"
@@ -243,10 +243,9 @@ class MonteCarloAgent:
             mpline_str = "N/A"
 
         epsilon_str = f"{self.epsilon:.3f}"
-        print(f"Pushed {scoring_moves} & {non_scoring_moves} moves to scoring & null buffers; Made {lines} lines in {inference_moves} moves; Moves / Line = {mpline_str}; Epsilon: {epsilon_str}")
+        print(f"Trained on {moves} samples; Made {lines} lines in {inference_moves} moves; Moves/Line = {mpline_str}; Epsilon: {epsilon_str}")
 
         self.total_samples_since_train = 0
-        self.scoring_samples_since_train = 0
         self.lines_since_train = 0
         self.gameovers_since_train = 0
         self.inference_moves_since_train = 0
@@ -276,21 +275,18 @@ class MonteCarloAgent:
 
         return (mirrored_grid, mirrored_next_piece), mirrored_action
 
-    def replay(self, include_non_scoring=True):
+    def replay(self):
         """
         Train the network on a batch of experiences using Monte Carlo returns.
         
         Loss: MSE between Q(state, action) and R_piece for chosen actions.
         No TD bootstrapping or target network involved.
         """
-        if len(self.scoring_memory) < self.batch_size:
+        if len(self.memory) < self.batch_size:
             return
-        if include_non_scoring and len(self.non_scoring_memory) < self.batch_size:
-            include_non_scoring = False
 
         self.model.train()
-        scoring_batch = random.sample(self.scoring_memory, self.batch_size)
-        non_scoring_batch = random.sample(self.non_scoring_memory, self.batch_size) if include_non_scoring else []
+        batch = random.sample(self.memory, self.batch_size)
         
         # Prepare batches
         grid_batch = []
@@ -298,19 +294,18 @@ class MonteCarloAgent:
         action_batch = []
         R_piece_batch = []
         
-        for batch in (scoring_batch, non_scoring_batch):
-            for state, action, R_piece in batch:
-                grid_batch.append(state[0])
-                next_piece_batch.append(state[1])
-                action_batch.append(action)
-                R_piece_batch.append(R_piece)
+        for state, action, R_piece in batch:
+            grid_batch.append(state[0])
+            next_piece_batch.append(state[1])
+            action_batch.append(action)
+            R_piece_batch.append(R_piece)
 
-                # Add mirrored counterpart to enforce left-right symmetry
-                mirrored_state, mirrored_action = self._mirror_state_action(state, action)
-                grid_batch.append(mirrored_state[0])
-                next_piece_batch.append(mirrored_state[1])
-                action_batch.append(mirrored_action)
-                R_piece_batch.append(R_piece)
+            # Add mirrored counterpart to enforce left-right symmetry
+            mirrored_state, mirrored_action = self._mirror_state_action(state, action)
+            grid_batch.append(mirrored_state[0])
+            next_piece_batch.append(mirrored_state[1])
+            action_batch.append(mirrored_action)
+            R_piece_batch.append(R_piece)
             
         # Convert to tensors
         grid_tensor = torch.FloatTensor(np.array(grid_batch)).to(self.device)

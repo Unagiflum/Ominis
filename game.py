@@ -85,7 +85,6 @@ class Game:
         self.training_step_count = 0
         self.current_trajectory = [] # Buffer for trajectory-based training
         self.trajectory_buffer = deque(maxlen=self.train_params['pieces_tracked'])
-        self.non_scoring_run = [] # Tracks consecutive non-scoring piece trajectories
         self.start_stats = (0, 0) # (Height, Holes) at start of piece
         self.last_save_time = 0 # Track last auto-save time
         
@@ -96,9 +95,7 @@ class Game:
         self.short_games_move_count = 0
         
         self.load_settings()
-        # Ensure buffers respect any loaded settings (e.g., pieces_tracked)
         self.trajectory_buffer = deque(maxlen=self.get_pieces_tracked_limit())
-        self.non_scoring_run = []
 
     def get_model_filename(self):
         """Generates filename based on current architecture params."""
@@ -237,7 +234,6 @@ class Game:
         self.fall_speed = 1000
         self.current_trajectory = []
         self.trajectory_buffer = deque(maxlen=self.get_pieces_tracked_limit())
-        self.non_scoring_run = []
         self.pending_reward_event = None
         self.short_games_move_count = 0
         
@@ -735,25 +731,8 @@ class Game:
         self.current_trajectory = []
         return queued_piece
 
-    def _maybe_push_non_scoring_run(self):
-        """Push a non-scoring run into the agent buffer based on mode-specific thresholds."""
-        if not self.agent:
-            self.non_scoring_run = []
-            return
-
-        samples_added = 0
-        for trajectory in self.non_scoring_run:
-            self.agent.add_non_scoring_trajectory(trajectory)
-            samples_added += len(trajectory)
-
-        # Clear after pushing to avoid duplicate storage for overlapping runs
-        self.non_scoring_run = []
-        if samples_added > 0:
-            # No lines cleared; not a game over
-            self.agent.record_training_stats(samples_added, 0, False, is_scoring=False)
-
-    def apply_reward_to_buffer(self, reward_value, done, lines_cleared, is_game_over):
-        """Apply a reward to every step in the buffered trajectories and trigger training cadence."""
+    def apply_reward_to_buffer(self, reward_value, lines_cleared, is_game_over):
+        """Apply a reward to every trajectory in the buffer."""
         if not self.agent:
             self.trajectory_buffer.clear()
             return
@@ -762,7 +741,7 @@ class Game:
 
         samples_added = 0
         for trajectory in self.trajectory_buffer:
-            self.agent.add_trajectory_with_done(trajectory, reward_value, done)
+            self.agent.add_trajectory_with_done(trajectory, reward_value)
             samples_added += len(trajectory)
 
         self.trajectory_buffer.clear()
@@ -863,10 +842,11 @@ class Game:
         elif rot_idx == 2: moves.append("ROTATE_CW")
         
         # 3. Execute Moves (and advance tick)
-        # We need to track if the piece was locked/placed during this step.
+        # Track state before move executes
         piece_before = self.current_piece
         lines_before = self.lines_cleared_total
-        
+        height_before, _ = self.get_grid_stats()
+
         # Execute the moves
         self.step_ai(moves)
         
@@ -877,12 +857,6 @@ class Game:
         done = (self.state == "GAMEOVER")
         
         # Check if piece was locked
-        # Piece is locked if:
-        # 1. Lines were cleared (implies lock)
-        # 2. Game Over (implies lock)
-        # 3. Current piece object changed (implies lock and spawn new)
-        # 4. State changed to ANIMATING_CLEAR (Visual mode lock)
-        
         if self.state == "ANIMATING_CLEAR":
             lines_cleared = len(self.clearing_lines)
             piece_locked = True
@@ -893,11 +867,9 @@ class Game:
         next_state = self.agent.get_state(self)
         
         # 5. Buffer Step
-        # We store (state, action, next_state)
-        # We don't calculate reward yet.
         self.current_trajectory.append((state, action, next_state))
         
-        # 6. If Piece Locked, Distribute Reward and Train
+        # 6. If Piece Locked, Calculate Reward and Train
         if piece_locked:
             piece_limit_reached = False
 
@@ -905,64 +877,56 @@ class Game:
             if self.train_params.get('short_games', False):
                 self.short_games_move_count += 1
 
-            # Move the locked piece trajectory into the rolling buffer (last N pieces)
-            locked_piece_trajectory = self.queue_current_trajectory()
+            # Move the locked piece trajectory into the rolling buffer
+            self.queue_current_trajectory()
 
             # Short games: Check if we've reached the piece limit (N)
             pieces_limit = self.get_pieces_tracked_limit()
             if self.train_params.get('short_games', False) and self.short_games_move_count >= pieces_limit:
-                done = True  # Mark as done without triggering game over
+                done = True
                 piece_limit_reached = True
 
-            is_short_game = self.train_params.get('short_games', False)
+            # Calculate placement quality BEFORE any line clears were applied
+            # height_before was captured before step_ai(moves) ran
+            height_after, _ = self.get_grid_stats()
+            height_increased = (height_after > height_before)
 
-            # Track non-scoring runs (consecutive pieces with zero lines)
-            if locked_piece_trajectory and lines_cleared == 0:
-                self.non_scoring_run.append(locked_piece_trajectory)
-            else:
-                # Any scoring event resets the non-scoring streak
-                self.non_scoring_run = []
+            # Detect if any newly placed blocks are above blank spaces (holes)
+            # Check the columns where the locked piece landed
+            blocks_over_holes = False
+            if piece_before:
+                for px, py in piece_before.shape:
+                    col = piece_before.x + px
+                    row = piece_before.y + py
+                    # Check if there are empty cells below this block in the same column
+                    if 0 <= col < self.grid_width and 0 <= row < self.grid_height:
+                        for check_row in range(row + 1, self.grid_height):
+                            if self.grid.grid[check_row][col] == (0, 0, 0):
+                                blocks_over_holes = True
+                                break
+                    if blocks_over_holes:
+                        break
 
-            # Long-game non-scoring push: threshold = pieces_tracked + 1
-            if not is_short_game and len(self.non_scoring_run) >= pieces_limit + 1:
-                self._maybe_push_non_scoring_run()
-
-            # Short-game non-scoring push: if the capped game ends with zero total score
-            if is_short_game and piece_limit_reached and self.lines_cleared_total == 0:
-                self._maybe_push_non_scoring_run()
-
-            # Decide if we should pay out rewards now (line clear or game end)
-            reward_event = None
-            
-            # Check for Game Over first (highest priority/impact)
             is_game_over = (self.state == "GAMEOVER")
             
-            # Calculate reward
-            # If we cleared lines AND died, we should probably just count the death?
-            # Or sum them? Let's sum them to be safe, but Game Over is -1000 and Clear is +350*N^2.
-            # If I clear 1 line (+350) and die (-1000), result is -650. This seems fair.
-            
-            if lines_cleared > 0 or (done and not piece_limit_reached):
-                 reward_event = self.agent.calculate_reward(lines_cleared, is_game_over)
+            # Calculate reward for this placement
+            reward = self.agent.calculate_reward(
+                lines_cleared, is_game_over, height_increased, blocks_over_holes
+            )
 
-            if reward_event is not None:
-                # Apply reward after the clear animation finishes (visual mode)
-                if self.state == "ANIMATING_CLEAR":
-                    self.pending_reward_event = (reward_event, done, lines_cleared, is_game_over)
-                else:
-                    self.apply_reward_to_buffer(reward_event, done, lines_cleared, is_game_over)
-                    if done:
-                        self.finish_training_round()
-            elif piece_limit_reached:
-                # Piece cap reached: skip training to avoid noisy targets, just restart
-                self.current_trajectory = []
-                self.trajectory_buffer.clear()
-                self.finish_training_round()
-        
+            # Apply reward to trajectory buffer
+            if self.state == "ANIMATING_CLEAR":
+                self.pending_reward_event = (reward, lines_cleared, is_game_over)
+            else:
+                self.apply_reward_to_buffer(reward, lines_cleared, is_game_over)
+                if done and not piece_limit_reached:
+                    self.finish_training_round()
+                elif piece_limit_reached:
+                    self.finish_training_round()
         
         # Auto-save every 5 minutes
         current_time = pygame.time.get_ticks()
-        if current_time - self.last_save_time > 5 * 60 * 1000:  # 5 minutes in milliseconds
+        if current_time - self.last_save_time > 5 * 60 * 1000:
             if self.agent:
                 self.agent.save(self.get_model_filename())
                 print(f"Auto-saved model ({self.get_model_filename()}) at {current_time // 1000}s")
@@ -1113,10 +1077,10 @@ class Game:
                 
                 # Process pending reward if in training mode
                 if self.state == "TRAINING" and self.pending_reward_event is not None:
-                    reward_value, done_flag, pending_lines, pending_game_over = self.pending_reward_event
-                    self.apply_reward_to_buffer(reward_value, done_flag, pending_lines, pending_game_over)
+                    reward_value, pending_lines, pending_game_over = self.pending_reward_event
+                    self.apply_reward_to_buffer(reward_value, pending_lines, pending_game_over)
                     self.pending_reward_event = None
-                    if done_flag:
+                    if pending_game_over:
                         self.finish_training_round()
 
     def draw(self):
