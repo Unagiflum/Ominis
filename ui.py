@@ -317,9 +317,9 @@ class UI:
         if not is_training: slider_rects['max_size'] = s_rect
         sy += 50
         
-        # Pieces tracked (reward buffer size)
-        pieces_tracked = max(1, min(20, params.get('pieces_tracked', 10)))
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (pieces_tracked - 1) / 19.0, f"Pieces Tracked: {pieces_tracked}", mouse_pos, self.small_font, active=not is_training)
+        # Short Game Length (how many pieces before auto-restart in short games mode)
+        short_game_length = max(1, min(20, params.get('pieces_tracked', 10)))
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (short_game_length - 1) / 19.0, f"Short Game Length: {short_game_length}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['pieces_tracked'] = s_rect
         sy += 40
         

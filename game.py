@@ -83,8 +83,7 @@ class Game:
         self.left_held_time = 0
         self.agent = None
         self.training_step_count = 0
-        self.current_trajectory = [] # Buffer for trajectory-based training
-        self.trajectory_buffer = deque(maxlen=self.train_params['pieces_tracked'])
+        self.current_trajectory = [] # Buffer for current piece's moves
         self.start_stats = (0, 0) # (Height, Holes) at start of piece
         self.last_save_time = 0 # Track last auto-save time
         
@@ -95,7 +94,6 @@ class Game:
         self.short_games_move_count = 0
         
         self.load_settings()
-        self.trajectory_buffer = deque(maxlen=self.get_pieces_tracked_limit())
 
     def get_model_filename(self):
         """Generates filename based on current architecture params."""
@@ -155,8 +153,8 @@ class Game:
         except Exception as e:
             print(f"Failed to save settings: {e}")
 
-    def get_pieces_tracked_limit(self):
-        """Clamp the pieces_tracked curriculum value to a sane range."""
+    def get_short_game_length(self):
+        """Get the number of pieces for a short game (1-20)."""
         return max(1, min(20, self.train_params.get('pieces_tracked', 10)))
 
     def get_grid_stats(self):
@@ -233,7 +231,6 @@ class Game:
         self.pieces_locked = 0
         self.fall_speed = 1000
         self.current_trajectory = []
-        self.trajectory_buffer = deque(maxlen=self.get_pieces_tracked_limit())
         self.pending_reward_event = None
         self.short_games_move_count = 0
         
@@ -722,30 +719,13 @@ class Game:
         if self.state != "TRAINING" and self.state != "TRAIN_MENU": 
              print(f"Game Over, Pieces: {self.pieces_locked}, Lines: {self.lines_cleared_total}")
 
-    def queue_current_trajectory(self):
-        """Move the current piece trajectory into the rolling buffer."""
-        queued_piece = None
-        if self.current_trajectory:
-            queued_piece = self.current_trajectory[:]
-            self.trajectory_buffer.append(queued_piece)
-        self.current_trajectory = []
-        return queued_piece
-
-    def apply_reward_to_buffer(self, reward_value, lines_cleared, is_game_over):
-        """Apply a reward to every trajectory in the buffer."""
-        if not self.agent:
-            self.trajectory_buffer.clear()
-            return
-        if not self.trajectory_buffer:
+    def apply_trajectory_reward(self, trajectory, reward_value, lines_cleared, is_game_over):
+        """Apply a reward to the given trajectory and push to agent memory."""
+        if not self.agent or not trajectory:
             return
 
-        samples_added = 0
-        for trajectory in self.trajectory_buffer:
-            self.agent.add_trajectory_with_done(trajectory, reward_value)
-            samples_added += len(trajectory)
-
-        self.trajectory_buffer.clear()
-        self.agent.record_training_stats(samples_added, lines_cleared, is_game_over)
+        self.agent.add_trajectory_with_done(trajectory, reward_value)
+        self.agent.record_training_stats(len(trajectory), lines_cleared, is_game_over)
 
     def finish_training_round(self):
         """Handle end-of-game bookkeeping and restart training."""
@@ -877,12 +857,12 @@ class Game:
             if self.train_params.get('short_games', False):
                 self.short_games_move_count += 1
 
-            # Move the locked piece trajectory into the rolling buffer
-            self.queue_current_trajectory()
+            # Capture the trajectory for this piece before clearing
+            trajectory = self.current_trajectory[:]
+            self.current_trajectory = []
 
-            # Short games: Check if we've reached the piece limit (N)
-            pieces_limit = self.get_pieces_tracked_limit()
-            if self.train_params.get('short_games', False) and self.short_games_move_count >= pieces_limit:
+            # Short games: Check if we've reached the piece limit
+            if self.train_params.get('short_games', False) and self.short_games_move_count >= self.get_short_game_length():
                 done = True
                 piece_limit_reached = True
 
@@ -914,14 +894,13 @@ class Game:
                 lines_cleared, is_game_over, height_increased, blocks_over_holes
             )
 
-            # Apply reward to trajectory buffer
+            # Apply reward to this piece's trajectory
             if self.state == "ANIMATING_CLEAR":
-                self.pending_reward_event = (reward, lines_cleared, is_game_over)
+                # Store trajectory with reward for after animation completes
+                self.pending_reward_event = (trajectory, reward, lines_cleared, is_game_over)
             else:
-                self.apply_reward_to_buffer(reward, lines_cleared, is_game_over)
-                if done and not piece_limit_reached:
-                    self.finish_training_round()
-                elif piece_limit_reached:
+                self.apply_trajectory_reward(trajectory, reward, lines_cleared, is_game_over)
+                if done:
                     self.finish_training_round()
         
         # Auto-save every 5 minutes
@@ -1077,8 +1056,8 @@ class Game:
                 
                 # Process pending reward if in training mode
                 if self.state == "TRAINING" and self.pending_reward_event is not None:
-                    reward_value, pending_lines, pending_game_over = self.pending_reward_event
-                    self.apply_reward_to_buffer(reward_value, pending_lines, pending_game_over)
+                    trajectory, reward_value, pending_lines, pending_game_over = self.pending_reward_event
+                    self.apply_trajectory_reward(trajectory, reward_value, pending_lines, pending_game_over)
                     self.pending_reward_event = None
                     if pending_game_over:
                         self.finish_training_round()
