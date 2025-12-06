@@ -48,10 +48,11 @@ class MonteCarloAgent:
         
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
         
-        # Action Space
+        # Action Space: 9 joint actions (3 lateral × 3 rotation)
         # Lateral: 0=Left, 1=Stay, 2=Right
-        # Rotate: 0=CCW, 1=Stay, 2=CW
-        self.action_space = [3, 3]
+        # Rotation: 0=CCW, 1=Stay, 2=CW 
+        # Encoding: action_idx = lateral_idx * 3 + rotation_idx
+        self.num_actions = 9
 
     def get_state(self, game):
         # 1. Board Channel (12 x 34)
@@ -114,30 +115,40 @@ class MonteCarloAgent:
         return grid_input, next_piece_vec
 
     def select_action(self, state):
+        """Select action using epsilon-greedy with joint action space.
+        
+        Returns:
+            action_idx: Integer 0-8 representing joint action
+                       (lateral_idx * 3 + rotation_idx)
+        """
         grid_input, next_piece_input = state
         
         self.model.eval()
         if random.random() <= self.epsilon:
-            # Random actions
-            lat = random.randint(0, 2)
-            rot = random.randint(0, 2)
-            return [lat, rot]
+            # Random joint action
+            return random.randint(0, self.num_actions - 1)
         
-        # Predict
+        # Predict Q-values for all 9 joint actions
         grid_tensor = torch.FloatTensor(grid_input).unsqueeze(0).to(self.device)
         next_tensor = torch.FloatTensor(next_piece_input).unsqueeze(0).to(self.device)
         
         with torch.no_grad():
-            lat_q, rot_q = self.model(grid_tensor, next_tensor)
+            q_values = self.model(grid_tensor, next_tensor)
             
-        # Categorical Sampling from Softmax distribution
-        lat_probs = F.softmax(lat_q, dim=-1)
-        rot_probs = F.softmax(rot_q, dim=-1)
+        # Greedy action selection (argmax) - pick highest Q-value
+        action_idx = q_values.argmax(dim=-1).item()
         
-        lat = torch.multinomial(lat_probs, 1).item()
-        rot = torch.multinomial(rot_probs, 1).item()
-        
-        return [lat, rot]
+        return action_idx
+    
+    def decode_action(self, action_idx):
+        """Decode joint action index to (lateral_idx, rotation_idx)."""
+        lateral_idx = action_idx // 3
+        rotation_idx = action_idx % 3
+        return lateral_idx, rotation_idx
+    
+    def encode_action(self, lateral_idx, rotation_idx):
+        """Encode (lateral_idx, rotation_idx) to joint action index."""
+        return lateral_idx * 3 + rotation_idx
 
     def calculate_reward(self, lines_cleared, game_over, height_increased, blocks_over_holes):
         """
@@ -250,13 +261,17 @@ class MonteCarloAgent:
         self.gameovers_since_train = 0
         self.inference_moves_since_train = 0
 
-    def _mirror_state_action(self, state, action):
+    def _mirror_state_action(self, state, action_idx):
         """
         Horizontally mirror the state (board channels + next piece) and action.
         
+        Args:
+            state: (grid_input, next_piece_input) tuple
+            action_idx: Joint action index 0-8
+        
         Returns:
             mirrored_state: (mirrored_grid_input, mirrored_next_piece_input)
-            mirrored_action: [mirrored_lateral, mirrored_rotation]
+            mirrored_action_idx: Mirrored joint action index
         """
         grid_input, next_piece_input = state
 
@@ -267,13 +282,14 @@ class MonteCarloAgent:
         next_piece_grid = np.array(next_piece_input).reshape(10, 10)
         mirrored_next_piece = np.flip(next_piece_grid, axis=1).reshape(-1).astype(np.float32)
 
-        # Map actions: Left <-> Right, CCW <-> CW, Stay stays
-        mirrored_action = [
-            2 - action[0],  # lateral mapping: 0<->2, 1 stays
-            2 - action[1]   # rotation mapping: 0<->2, 1 stays
-        ]
+        # Decode action, mirror, and re-encode
+        lateral_idx, rotation_idx = self.decode_action(action_idx)
+        # Map: Left <-> Right (0<->2, 1 stays), CCW <-> CW (0<->2, 1 stays)
+        mirrored_lateral = 2 - lateral_idx
+        mirrored_rotation = 2 - rotation_idx
+        mirrored_action_idx = self.encode_action(mirrored_lateral, mirrored_rotation)
 
-        return (mirrored_grid, mirrored_next_piece), mirrored_action
+        return (mirrored_grid, mirrored_next_piece), mirrored_action_idx
 
     def replay(self):
         """
@@ -291,45 +307,37 @@ class MonteCarloAgent:
         # Prepare batches
         grid_batch = []
         next_piece_batch = []
-        action_batch = []
+        action_batch = []  # Now stores single action indices (0-8)
         R_piece_batch = []
         
-        for state, action, R_piece in batch:
+        for state, action_idx, R_piece in batch:
             grid_batch.append(state[0])
             next_piece_batch.append(state[1])
-            action_batch.append(action)
+            action_batch.append(action_idx)
             R_piece_batch.append(R_piece)
 
             # Add mirrored counterpart to enforce left-right symmetry
-            mirrored_state, mirrored_action = self._mirror_state_action(state, action)
+            mirrored_state, mirrored_action_idx = self._mirror_state_action(state, action_idx)
             grid_batch.append(mirrored_state[0])
             next_piece_batch.append(mirrored_state[1])
-            action_batch.append(mirrored_action)
+            action_batch.append(mirrored_action_idx)
             R_piece_batch.append(R_piece)
             
         # Convert to tensors
         grid_tensor = torch.FloatTensor(np.array(grid_batch)).to(self.device)
         next_piece_tensor = torch.FloatTensor(np.array(next_piece_batch)).to(self.device)
         R_piece_tensor = torch.FloatTensor(R_piece_batch).to(self.device)
+        action_tensor = torch.LongTensor(action_batch).unsqueeze(1).to(self.device)  # Shape: (batch, 1)
         
-        # Forward pass through main network
-        lat_q, rot_q = self.model(grid_tensor, next_piece_tensor)
+        # Forward pass through main network - now returns single Q-value tensor
+        q_values = self.model(grid_tensor, next_piece_tensor)  # Shape: (batch, 9)
         
-        # Compute loss using only the Q-values for the chosen actions
-        # We use gather to select Q(s, a) for the action taken
-        action_tensor = torch.LongTensor(action_batch).to(self.device)
+        # Extract Q-value for chosen action using gather
+        q_chosen = q_values.gather(1, action_tensor).squeeze(1)  # Shape: (batch,)
         
-        # Extract Q-values for chosen actions from each head
-        lat_q_chosen = lat_q.gather(1, action_tensor[:, 0:1]).squeeze(1)  # Shape: (batch_size,)
-        rot_q_chosen = rot_q.gather(1, action_tensor[:, 1:2]).squeeze(1)
-        
-        # Monte Carlo supervised loss: All heads predict the same R_piece
+        # Monte Carlo supervised loss: Q(s,a) should predict R_piece
         criterion = torch.nn.MSELoss()
-        loss_lat = criterion(lat_q_chosen, R_piece_tensor)
-        loss_rot = criterion(rot_q_chosen, R_piece_tensor)
-        
-        # Total loss is the sum of all head losses
-        loss = loss_lat + loss_rot
+        loss = criterion(q_chosen, R_piece_tensor)
         
         # Backpropagation
         self.optimizer.zero_grad()

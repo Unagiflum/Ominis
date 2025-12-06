@@ -804,11 +804,11 @@ class Game:
         # 1. Get Current State
         state = self.agent.get_state(self)
         
-        # 2. Select Action
+        # 2. Select Action (returns joint action index 0-8)
         action = self.agent.select_action(state)
         # Count every inference step, even if it is later discarded from memory
         self.agent.record_inference_step()
-        lat_idx, rot_idx = action
+        lat_idx, rot_idx = self.agent.decode_action(action)
         
         # Map indices to moves
         moves = []
@@ -927,7 +927,7 @@ class Game:
         action = self.agent.select_action(state)
         self.agent.epsilon = old_eps
         
-        lat_idx, rot_idx = action
+        lat_idx, rot_idx = self.agent.decode_action(action)
         
         # Map indices to moves
         moves = []
