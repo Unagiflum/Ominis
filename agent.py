@@ -246,15 +246,19 @@ class MonteCarloAgent:
         inference_moves = self.inference_moves_since_train
 
         self.replay()
-        # Per-window moves/line based on inference decisions
+        # Per-window stats
+        gameovers = self.gameovers_since_train
         if lines > 0:
             moves_per_line = inference_moves / lines
             mpline_str = f"{moves_per_line:.1f}"
+            go_per_line = gameovers / lines
+            goline_str = f"{go_per_line:.3f}"
         else:
             mpline_str = "N/A"
+            goline_str = "N/A"
 
         epsilon_str = f"{self.epsilon:.3f}"
-        print(f"Trained on {moves} samples; Made {lines} lines in {inference_moves} moves; Moves/Line = {mpline_str}; Epsilon: {epsilon_str}")
+        print(f"Trained on {moves} moves; {lines} lines, {gameovers} Game Overs; Moves/Line = {mpline_str}; Game Overs/Line = {goline_str}; Epsilon: {epsilon_str}")
 
         self.total_samples_since_train = 0
         self.lines_since_train = 0

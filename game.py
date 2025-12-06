@@ -715,9 +715,6 @@ class Game:
     def handle_game_over(self):
         self.state = "GAMEOVER"
         self.audio.stop()
-        # Only print if NOT in training (finish_training_round handles it for training)
-        if self.state != "TRAINING" and self.state != "TRAIN_MENU": 
-             print(f"Game Over, Pieces: {self.pieces_locked}, Lines: {self.lines_cleared_total}")
 
     def apply_trajectory_reward(self, trajectory, reward_value, lines_cleared, is_game_over):
         """Apply a reward to the given trajectory and push to agent memory."""
