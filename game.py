@@ -863,10 +863,35 @@ class Game:
                 done = True
                 piece_limit_reached = True
 
-            # Calculate placement quality BEFORE any line clears were applied
+            # Get holes before placement (from stats captured at piece spawn)
+            _, holes_before = self.start_stats
+            
+            # Get lowest column height BEFORE placement for height delta calculation
+            # We need to use start_stats height for comparison
+            start_height, _ = self.start_stats
+            
+            # Calculate placement quality AFTER pieces are locked but BEFORE line clears may apply
             # height_before was captured before step_ai(moves) ran
-            height_after, _ = self.get_grid_stats()
+            height_after, holes_after = self.get_grid_stats()
             height_increased = (height_after > height_before)
+
+            # Calculate placement_height_delta:
+            # Find the lowest block (highest Y value) of the placed piece
+            # Compare it to the lowest column height (top of shortest column)
+            placement_height_delta = 0
+            if piece_before:
+                # Get lowest column height at start of piece
+                lowest_col_height = self.get_lowest_column_height()
+                
+                # Find the lowest block of the piece (highest Y coordinate = lowest on screen)
+                lowest_block_y = max(piece_before.y + py for px, py in piece_before.shape)
+                # Convert to height from bottom (grid_height - y)
+                piece_lowest_height = self.grid_height - lowest_block_y
+                
+                # Delta: how far above the lowest available spot is this placement?
+                placement_height_delta = piece_lowest_height - lowest_col_height
+                # Can be negative if piece is placed in a well (below current column tops)
+                placement_height_delta = max(0, placement_height_delta)
 
             # Detect if any newly placed blocks are above blank spaces (holes)
             # Check the columns where the locked piece landed
@@ -888,7 +913,8 @@ class Game:
             
             # Calculate reward for this placement
             reward = self.agent.calculate_reward(
-                lines_cleared, is_game_over, height_increased, blocks_over_holes
+                lines_cleared, is_game_over, height_increased, blocks_over_holes,
+                placement_height_delta, holes_before, holes_after
             )
 
             # Apply reward to this piece's trajectory
