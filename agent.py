@@ -171,17 +171,17 @@ class MonteCarloAgent:
 
         # Lines: 350 * L^2
         if lines_cleared > 0:
-            reward += 50#350 * (lines_cleared ** 2)
+            reward += 0#350 * (lines_cleared ** 2)
 
         # Game over: -1000
         if game_over:
-            reward -= 50#1000
+            reward -= 0#1000
 
         # Good placement reward (+50) - only if ALL THREE conditions are met:
         # 1. No holes are created
         # 2. Max height is not increased
         # 3. Lowest block of placement is no more than 2 places higher than lowest column
-        if not height_increased and not blocks_over_holes and placement_height_delta <= 2:
+        if not height_increased and not blocks_over_holes and placement_height_delta <= 3:
             reward += 50
         else:
             # Bad placement: one of the conditions failed
