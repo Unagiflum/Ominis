@@ -1022,7 +1022,7 @@ class Game:
                     self.last_headless_draw = current_time
                     return # Return to allow draw()
                 
-                steps_per_check = 500
+                steps_per_check = 50  # Smaller batch for responsive UI
                 while True:
                     # Run a batch of steps
                     for _ in range(steps_per_check):
