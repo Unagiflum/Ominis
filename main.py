@@ -16,3 +16,11 @@ if __name__ == "__main__":
         except Exception:
             pass
         pygame.quit()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        try:
+            game.audio.cleanup()
+        except Exception:
+            pass
+        pygame.quit()
