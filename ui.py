@@ -254,7 +254,8 @@ class UI:
                 
             current_y += line_height
 
-    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False, volume=0.5):
+    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False, volume=0.5, epsilon_bump_val=0.20):
+
         self.draw_background()
         
         # Standard Padding
@@ -289,6 +290,13 @@ class UI:
         # Hidden Layer Count (1, 2, 3, 4)
         s_rect = self.draw_slider(slider_x, sy, slider_width, (params['hl_count'] - 1) / 3.0, f"Hidden Layers: {params['hl_count']}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['hl_count'] = s_rect
+        
+        # Epsilon Reset Button
+        # Moved up (sy + 30 instead of 45) and smaller height (25 instead of 30)
+        btn_eps_reset_rect = self.draw_button(slider_x, sy + 30, slider_width, 25, f"Eps {epsilon_bump_val}", not is_training, mouse_pos, font=self.small_font)
+
+
+
         
         current_y += arch_height + 20
         
@@ -353,7 +361,8 @@ class UI:
         
         self.draw_grid(grid, offset_x, offset_y)
         
-        return btn_back_rect, chk_rect, btn_start_rect, slider_rects, vol_slider_rect, short_games_chk_rect
+        return btn_back_rect, chk_rect, btn_start_rect, slider_rects, vol_slider_rect, short_games_chk_rect, btn_eps_reset_rect
+
 
     def draw_group_box(self, x, y, width, height, title):
         rect = pygame.Rect(x, y, width, height)
@@ -416,7 +425,7 @@ class UI:
         
         return rect
 
-    def draw_button(self, x, y, width, height, label, active, mouse_pos=None):
+    def draw_button(self, x, y, width, height, label, active, mouse_pos=None, font=None):
         rect = pygame.Rect(x, y, width, height)
         
         # Draw solid background first
@@ -435,11 +444,13 @@ class UI:
             
         pygame.draw.rect(self.screen, color, rect, 2, border_radius=10)
         
-        text = self.font.render(label, True, color)
+        use_font = font if font else self.font
+        text = use_font.render(label, True, color)
         text_rect = text.get_rect(center=rect.center)
         self.screen.blit(text, text_rect)
         
         return rect
+
 
     def draw_slider(self, x, y, width, value, label, mouse_pos=None, font=None, active=True):
         if font is None:

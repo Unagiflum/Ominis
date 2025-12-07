@@ -175,7 +175,7 @@ class MonteCarloAgent:
 
         # Game over: -1000
         if game_over:
-            reward -= 0#1000
+            reward -= 50#1000
 
         # Good placement reward (+50) - only if ALL THREE conditions are met:
         # 1. No holes are created

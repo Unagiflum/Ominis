@@ -61,6 +61,11 @@ class Game:
         self.train_slider_rect = None
         self.dragging_slider = False
         
+        # Architecture UI
+        self.epsilon_bump_value = 0.20
+        self.btn_eps_reset_rect = None
+
+        
         # Training Parameters
         self.train_params = {
             'visual_mode': True,
@@ -451,7 +456,18 @@ class Game:
                                 self.active_slider = name
                                 self.update_train_slider(event.pos[0])
                         
+                        # Check Epsilon Reset Button
+                        if self.btn_eps_reset_rect and self.btn_eps_reset_rect.collidepoint(event.pos):
+                            if self.agent:
+                                self.agent.epsilon = self.epsilon_bump_value
+                                self.agent.save(self.get_model_filename())
+                                print(f"Epsilon manually reset to {self.epsilon_bump_value} and saved.")
+                            else:
+                                print("Agent not loaded. Start training first.")
+
+                        
                         if self.train_slider_rect and self.train_slider_rect.collidepoint(event.pos):
+
                             self.dragging_slider = True
                             self.update_volume(event.pos[0], is_train_slider=True)
                                 
@@ -1139,7 +1155,8 @@ class Game:
                 display_grid = Grid(self.grid_width, self.grid_height, self.cell_size)
             
             is_training = (self.state == "TRAINING" or (self.state in ["ANIMATING_CLEAR", "ANIMATING_DROP"] and hasattr(self, 'pre_anim_state') and self.pre_anim_state == "TRAINING"))
-            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.train_slider_rects, self.train_slider_rect, self.short_games_chk_rect = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, display_grid, is_training=is_training, volume=self.volume)
+            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.train_slider_rects, self.train_slider_rect, self.short_games_chk_rect, self.btn_eps_reset_rect = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, display_grid, is_training=is_training, volume=self.volume, epsilon_bump_val=self.epsilon_bump_value)
+
             
             # If TRAINING, we also need to draw the falling piece if Visual Mode is ON
             if is_training and self.train_params['visual_mode']:
