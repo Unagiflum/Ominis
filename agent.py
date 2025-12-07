@@ -171,7 +171,7 @@ class MonteCarloAgent:
 
         # Lines: 350 * L^2
         if lines_cleared > 0:
-            reward += 0#350 * (lines_cleared ** 2)
+            reward += 50#350 * (lines_cleared ** 2)
 
         # Game over: -1000
         if game_over:
