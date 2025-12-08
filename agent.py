@@ -171,12 +171,12 @@ class MonteCarloAgent:
 
         # Lines: 350 * L^2
         if lines_cleared > 0:
-            reward += 0#350 * (lines_cleared ** 2)
+            reward += 50 * lines_cleared
 
         # Game over: -1000
         if game_over:
-            reward -= 0#1000
-
+            reward -= 20
+            
         # Good placement reward (+50) - only if ALL THREE conditions are met:
         # 1. No holes are created
         # 2. Max height is not increased
