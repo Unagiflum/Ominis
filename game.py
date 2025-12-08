@@ -199,6 +199,44 @@ class Game:
         
         return lowest_height
 
+    def get_post_clear_grid_stats(self, clearing_lines):
+        """
+        Simulates line clearing on a temporary grid to calculate post-clear stats (height, holes).
+        Returns: (simulated_height, simulated_holes)
+        """
+        if not clearing_lines:
+            return self.get_grid_stats()
+
+        # Create simulated grid structure
+        new_grid = []
+        kept_rows = []
+        for y in range(self.grid_height):
+            if y not in clearing_lines:
+                kept_rows.append(self.grid.grid[y]) # Reference is fine since we won't mutate inner lists
+        
+        num_new = self.grid_height - len(kept_rows)
+        for _ in range(num_new):
+            new_grid.append([(0, 0, 0) for _ in range(self.grid_width)])
+        new_grid.extend(kept_rows)
+        
+        # Calculate stats on this synthetic grid
+        max_height = 0
+        for y in range(self.grid_height):
+            if any(c != (0,0,0) for c in new_grid[y]):
+                max_height = self.grid_height - y
+                break
+        
+        holes = 0
+        for x in range(self.grid_width):
+            found_block = False
+            for y in range(self.grid_height):
+                if new_grid[y][x] != (0,0,0):
+                    found_block = True
+                elif found_block:
+                    holes += 1
+                    
+        return max_height, holes
+
 
     def spawn_piece(self):
         """Spawn a piece centered by its bounding box with an unbiased tie-break."""
@@ -616,20 +654,11 @@ class Game:
         if lines_to_clear:
             # In headless training mode, skip animation and sound
             if self.state == "TRAINING" and not self.train_params['visual_mode']:
-                # Directly apply clears without animation
+                # Deferred application: We Just mark lines to clear and return True.
+                # The actual clearing and spawning happens in step_ai_training AFTER reward calculation.
                 self.clearing_lines = lines_to_clear
-                self.apply_line_clears()
-                
-                # CRITICAL FIX: Spawn new piece and update start_stats
-                self.current_piece = self.next_piece
-                self.start_stats = self.get_grid_stats()  # Update for new piece
-                self.next_piece = self.spawn_piece()
-                
-                # Check for game over on spawn
-                if self.grid.check_collision(self.current_piece):
-                    self.handle_game_over()
-                
-                return True  # Line clear handled, piece spawned
+                return True
+
             else:
                 # Normal animation flow
                 self.clearing_lines = lines_to_clear
@@ -835,10 +864,15 @@ class Game:
         elif rot_idx == 2: moves.append("ROTATE_CW")
         
         # 3. Execute Moves (and advance tick)
+        # 3. Execute Moves (and advance tick)
         # Track state before move executes
         piece_before = self.current_piece
         lines_before = self.lines_cleared_total
-        height_before, _ = self.get_grid_stats()
+        # Capture stats locally to ensure fresh data for reward calculation
+        height_before, holes_before_step = self.get_grid_stats()
+        
+        # Reset clearing lines flag for Headless detection
+        self.clearing_lines = []
 
         # Execute the moves
         self.step_ai(moves)
@@ -850,7 +884,10 @@ class Game:
         done = (self.state == "GAMEOVER")
         
         # Check if piece was locked
-        if self.state == "ANIMATING_CLEAR":
+        # Extended check for Headless mode deferred clearing
+        is_headless_clearing = (self.state == "TRAINING" and not self.train_params['visual_mode'] and self.clearing_lines)
+        
+        if self.state == "ANIMATING_CLEAR" or is_headless_clearing:
             lines_cleared = len(self.clearing_lines)
             piece_locked = True
         else:
@@ -879,8 +916,8 @@ class Game:
                 done = True
                 piece_limit_reached = True
 
-            # Get holes before placement (from stats captured at piece spawn)
-            _, holes_before = self.start_stats
+            # Get holes before placement (using fresh stats captured before step)
+            holes_before = holes_before_step
             
             # Get lowest column height BEFORE placement for height delta calculation
             # We need to use start_stats height for comparison
@@ -909,27 +946,24 @@ class Game:
                 # Can be negative if piece is placed in a well (below current column tops)
                 placement_height_delta = max(0, placement_height_delta)
 
-            # Detect if any newly placed blocks are above blank spaces (holes)
-            # Check the columns where the locked piece landed
-            blocks_over_holes = False
-            if piece_before:
-                for px, py in piece_before.shape:
-                    col = piece_before.x + px
-                    row = piece_before.y + py
-                    # Check if there are empty cells below this block in the same column
-                    if 0 <= col < self.grid_width and 0 <= row < self.grid_height:
-                        for check_row in range(row + 1, self.grid_height):
-                            if self.grid.grid[check_row][col] == (0, 0, 0):
-                                blocks_over_holes = True
-                                break
-                    if blocks_over_holes:
-                        break
+            # Detect if net holes increased (after line clears are processed)
+            # This handles cases where we fill a hole but create a new one, or clear lines to reveal/remove holes.
+            # We need to simulate the line clear to get the final hole count.
+            
+            # Determine which lines would be cleared
+            current_clearing_lines = []
+            for y, row in enumerate(self.grid.grid):
+                if (0, 0, 0) not in row:
+                    current_clearing_lines.append(y)
+            
+            _, holes_final = self.get_post_clear_grid_stats(current_clearing_lines)
+            net_holes_created = (holes_final > holes_before)
 
             is_game_over = (self.state == "GAMEOVER")
             
             # Calculate reward for this placement
             reward = self.agent.calculate_reward(
-                lines_cleared, is_game_over, height_increased, blocks_over_holes,
+                lines_cleared, is_game_over, height_increased, net_holes_created,
                 placement_height_delta, holes_before, holes_after
             )
 
@@ -939,6 +973,24 @@ class Game:
                 self.pending_reward_event = (trajectory, reward, lines_cleared, is_game_over)
             else:
                 self.apply_trajectory_reward(trajectory, reward, lines_cleared, is_game_over)
+                
+                # HEADLESS DEFERRED ACTIONS
+                # If we had deferred line clearing, execute it now
+                if is_headless_clearing:
+                    self.apply_line_clears()
+                    # Reset clearing list
+                    self.clearing_lines = []
+                    
+                    self.current_piece = self.next_piece
+                    self.start_stats = self.get_grid_stats() # Update for new piece
+                    self.next_piece = self.spawn_piece()
+                    
+                    # Check collision for new piece
+                    if self.grid.check_collision(self.current_piece):
+                        self.handle_game_over()
+                        if self.state == "GAMEOVER":
+                             done = True
+                
                 if done:
                     self.finish_training_round()
         

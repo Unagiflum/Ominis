@@ -150,7 +150,7 @@ class MonteCarloAgent:
         """Encode (lateral_idx, rotation_idx) to joint action index."""
         return lateral_idx * 3 + rotation_idx
 
-    def calculate_reward(self, lines_cleared, game_over, height_increased, blocks_over_holes, 
+    def calculate_reward(self, lines_cleared, game_over, height_increased, net_holes_created, 
                          placement_height_delta, holes_before, holes_after):
         """
         Calculate reward for a piece placement.
@@ -159,7 +159,7 @@ class MonteCarloAgent:
             lines_cleared: Number of lines cleared (0-4+)
             game_over: Whether the game ended
             height_increased: True if max height rose after placement
-            blocks_over_holes: True if any new blocks are above blank spaces
+            net_holes_created: True if total holes increased (post-clear)
             placement_height_delta: How many rows above the lowest column the piece's lowest block was placed
             holes_before: Total holes before placement
             holes_after: Total holes after placement (post line-clear)
@@ -178,10 +178,10 @@ class MonteCarloAgent:
             reward -= 20
             
         # Good placement reward (+50) - only if ALL THREE conditions are met:
-        # 1. No holes are created
+        # 1. No holes are created (net)
         # 2. Max height is not increased
-        # 3. Lowest block of placement is no more than 2 places higher than lowest column
-        if not height_increased and not blocks_over_holes and placement_height_delta <= 3:
+        # 3. Lowest block of placement is no more than N places higher than lowest column
+        if not height_increased and not net_holes_created and placement_height_delta <= 3:
             reward += 50
         else:
             # Bad placement: one of the conditions failed
