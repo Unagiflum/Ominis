@@ -172,11 +172,10 @@ class Game:
         
         holes = 0
         for x in range(self.grid_width):
-            found_block = False
-            for y in range(self.grid_height):
-                if self.grid.grid[y][x] != (0,0,0):
-                    found_block = True
-                elif found_block:
+            for y in range(1, self.grid_height):
+                # Hole definition: Empty space immediately below a block
+                # We check if current is empty and above is NOT empty
+                if self.grid.grid[y][x] == (0,0,0) and self.grid.grid[y-1][x] != (0,0,0):
                     holes += 1
         return max_height, holes
     
@@ -228,11 +227,8 @@ class Game:
         
         holes = 0
         for x in range(self.grid_width):
-            found_block = False
-            for y in range(self.grid_height):
-                if new_grid[y][x] != (0,0,0):
-                    found_block = True
-                elif found_block:
+            for y in range(1, self.grid_height):
+                 if new_grid[y][x] == (0,0,0) and new_grid[y-1][x] != (0,0,0):
                     holes += 1
                     
         return max_height, holes
