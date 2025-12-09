@@ -260,14 +260,16 @@ class MonteCarloAgent:
         if lines > 0:
             moves_per_line = inference_moves / lines
             mpline_str = f"{moves_per_line:.1f}"
-            go_per_line = gameovers / lines
-            goline_str = f"{go_per_line:.3f}"
         else:
             mpline_str = "N/A"
-            goline_str = "N/A"
+        if gameovers > 0:
+            lines_per_game = lines / gameovers
+            lines_per_game_str = f"{lines_per_game:.3f}"
+        else:
+            lines_per_game_str = "N/A"
 
         epsilon_str = f"{self.epsilon:.3f}"
-        print(f"Trained on {moves} moves; {lines} lines, {gameovers} Game Overs; Moves/Line = {mpline_str}; Game Overs/Line = {goline_str}; Epsilon: {epsilon_str}")
+        print(f"Trained on {moves} moves; {lines} lines, {gameovers} Game Overs; Moves/Line = {mpline_str}; Lines/Game = {lines_per_game_str}; Epsilon = {epsilon_str}")
 
         self.total_samples_since_train = 0
         self.lines_since_train = 0
