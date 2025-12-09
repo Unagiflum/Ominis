@@ -169,15 +169,13 @@ class MonteCarloAgent:
         """
         reward = 0
 
-        # Lines: 350 * L^2
         if lines_cleared > 0:
             reward += 20 * lines_cleared
 
-        # Game over: -1000
         if game_over:
             reward -= 20
             
-        # Good placement reward (+50) - only if ALL THREE conditions are met:
+        # Good placement reward (+20) - only if ALL THREE conditions are met:
         # 1. Max height does not rise
         # 2. Lowest surviving block is within N rows of the lowest column (N=3)
         # 3. Net holes are not increased (net_holes <= 0)
@@ -195,8 +193,6 @@ class MonteCarloAgent:
             reward += 20
 
         return reward
-
-
 
     def add_trajectory_with_done(self, trajectory, final_reward):
         """
