@@ -150,19 +150,19 @@ class MonteCarloAgent:
         """Encode (lateral_idx, rotation_idx) to joint action index."""
         return lateral_idx * 3 + rotation_idx
 
-    def calculate_reward(self, lines_cleared, game_over, height_increased, net_holes_created, 
-                         placement_height_delta, holes_before, holes_after):
+    def calculate_reward(self, lines_cleared, game_over, max_height_before, max_height_after,
+                         lowest_col_height_before, lowest_block_height_after, net_holes):
         """
-        Calculate reward for a piece placement.
+        Calculate reward for a piece placement using post-clear board state.
         
         Args:
-            lines_cleared: Number of lines cleared (0-4+)
+            lines_cleared: Lines cleared by the placement
             game_over: Whether the game ended
-            height_increased: True if max height rose after placement
-            net_holes_created: True if total holes increased (post-clear)
-            placement_height_delta: How many rows above the lowest column the piece's lowest block was placed
-            holes_before: Total holes before placement
-            holes_after: Total holes after placement (post line-clear)
+            max_height_before: Max stack height before the placement
+            max_height_after: Max stack height after the placement (post-clear)
+            lowest_col_height_before: Height of the lowest column before the placement
+            lowest_block_height_after: Height of the lowest surviving block of the placed piece (post-clear, 0 if none remain)
+            net_holes: holes_after - holes_before (post-clear vs pre-lock)
         
         Returns:
             Total reward for this piece placement
@@ -178,10 +178,12 @@ class MonteCarloAgent:
             reward -= 20
             
         # Good placement reward (+50) - only if ALL THREE conditions are met:
-        # 1. No holes are created (net)
-        # 2. Max height is not increased
-        # 3. Lowest block of placement is no more than N places higher than lowest column
-        if not height_increased and not net_holes_created and placement_height_delta <= 3:
+        # 1. Max height does not rise
+        # 2. Lowest surviving block is within N rows of the lowest column (N=3)
+        # 3. Net holes are not increased (net_holes <= 0)
+        placement_height_delta = max(0, lowest_block_height_after - lowest_col_height_before)
+        good_move = (max_height_after <= max_height_before and placement_height_delta <= 3 and net_holes <= 0)
+        if good_move:
             reward += 20
         else:
             # Bad placement: one of the conditions failed
@@ -189,8 +191,7 @@ class MonteCarloAgent:
         
         # Bonus for decreasing net holes (+20)
         # This rewards sliding under overhangs or clearing lines with holes beneath
-        holes_reduced = holes_before - holes_after
-        if holes_reduced > 0:
+        if net_holes < 0:
             reward += 20
 
         return reward

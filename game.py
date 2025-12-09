@@ -233,6 +233,35 @@ class Game:
                     
         return max_height, holes
 
+    def get_piece_lowest_height_after_clear(self, piece, clearing_lines):
+        """
+        Returns the height (from bottom) of the lowest surviving block of `piece`
+        after removing rows in clearing_lines and applying the resulting drop.
+        If all blocks are cleared, returns 0.
+        """
+        if not piece:
+            return 0
+
+        # Pre-sort for efficient counting
+        clearing_set = set(clearing_lines or [])
+        sorted_clears = sorted(clearing_set)
+
+        lowest_block_height = 0
+        for px, py in piece.shape:
+            abs_y = piece.y + py
+            # Skip blocks that land on a cleared line
+            if abs_y in clearing_set:
+                continue
+            # Blocks drop by the number of cleared lines below them
+            cleared_below = sum(1 for cl in sorted_clears if cl > abs_y)
+            new_y = abs_y + cleared_below
+            if new_y >= self.grid_height:
+                continue
+            block_height = self.grid_height - new_y
+            lowest_block_height = max(lowest_block_height, block_height)
+
+        return lowest_block_height
+
 
     def spawn_piece(self):
         """Spawn a piece centered by its bounding box with an unbiased tie-break."""
@@ -866,6 +895,7 @@ class Game:
         lines_before = self.lines_cleared_total
         # Capture stats locally to ensure fresh data for reward calculation
         height_before, holes_before_step = self.get_grid_stats()
+        lowest_col_height_before = self.get_lowest_column_height()
         
         # Reset clearing lines flag for Headless detection
         self.clearing_lines = []
@@ -912,55 +942,31 @@ class Game:
                 done = True
                 piece_limit_reached = True
 
-            # Get holes before placement (using fresh stats captured before step)
-            holes_before = holes_before_step
-            
-            # Get lowest column height BEFORE placement for height delta calculation
-            # We need to use start_stats height for comparison
-            start_height, _ = self.start_stats
-            
-            # Calculate placement quality AFTER pieces are locked but BEFORE line clears may apply
-            # height_before was captured before step_ai(moves) ran
-            height_after, holes_after = self.get_grid_stats()
-            height_increased = (height_after > height_before)
-
-            # Calculate placement_height_delta:
-            # Find the lowest block (highest Y value) of the placed piece
-            # Compare it to the lowest column height (top of shortest column)
-            placement_height_delta = 0
-            if piece_before:
-                # Get lowest column height at start of piece
-                lowest_col_height = self.get_lowest_column_height()
-                
-                # Find the lowest block of the piece (highest Y coordinate = lowest on screen)
-                lowest_block_y = max(piece_before.y + py for px, py in piece_before.shape)
-                # Convert to height from bottom (grid_height - y)
-                piece_lowest_height = self.grid_height - lowest_block_y
-                
-                # Delta: how far above the lowest available spot is this placement?
-                placement_height_delta = piece_lowest_height - lowest_col_height
-                # Can be negative if piece is placed in a well (below current column tops)
-                placement_height_delta = max(0, placement_height_delta)
-
-            # Detect if net holes increased (after line clears are processed)
-            # This handles cases where we fill a hole but create a new one, or clear lines to reveal/remove holes.
-            # We need to simulate the line clear to get the final hole count.
-            
             # Determine which lines would be cleared
-            current_clearing_lines = []
-            for y, row in enumerate(self.grid.grid):
-                if (0, 0, 0) not in row:
-                    current_clearing_lines.append(y)
-            
-            _, holes_final = self.get_post_clear_grid_stats(current_clearing_lines)
-            net_holes_created = (holes_final > holes_before)
+            clearing_lines = self.clearing_lines[:] if self.clearing_lines else []
+            if not clearing_lines:
+                for y, row in enumerate(self.grid.grid):
+                    if (0, 0, 0) not in row:
+                        clearing_lines.append(y)
+
+            # Post-clear stats on simulated grid
+            max_height_after, holes_after = self.get_post_clear_grid_stats(clearing_lines)
+            net_holes = holes_after - holes_before_step
+
+            # Lowest surviving block height after clears
+            lowest_block_height_after = self.get_piece_lowest_height_after_clear(piece_before, clearing_lines)
 
             is_game_over = (self.state == "GAMEOVER")
             
             # Calculate reward for this placement
             reward = self.agent.calculate_reward(
-                lines_cleared, is_game_over, height_increased, net_holes_created,
-                placement_height_delta, holes_before, holes_after
+                lines_cleared,
+                is_game_over,
+                height_before,
+                max_height_after,
+                lowest_col_height_before,
+                lowest_block_height_after,
+                net_holes
             )
 
             # Apply reward to this piece's trajectory
