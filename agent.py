@@ -23,7 +23,7 @@ class MonteCarloAgent:
         self.gamma = 0.7 #(discount factor for Monte Carlo return, prioritizes most recent moves)
         self.epsilon = 1.00 # Initial exploration rate
         self.epsilon_min = self.params.get('epsilon_min_percent', 5) / 100.0 # Minimum exploration rate (Default 5%)
-        self.epsilon_decay = 0.999 # Decay per training step
+        self.epsilon_decay = 0.9997 # Decay per training step
         lr = self.params.get('learning_rate', 0.0001)
         # Clamp to UI-supported range
         lr = max(0.0001, min(0.005, lr))
