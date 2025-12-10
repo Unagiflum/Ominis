@@ -36,8 +36,8 @@ class MonteCarloAgent:
         self.inference_moves_since_train = 0
         
         # Benchmarking history
-        self.moves_per_line_history = deque(maxlen=100)
-        self.lines_per_game_history = deque(maxlen=100)
+        # Stores tuples of (inference_moves, lines_cleared, game_overs)
+        self.history = deque(maxlen=100)
         
         # Device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -261,27 +261,40 @@ class MonteCarloAgent:
         self.replay()
         # Per-window stats
         gameovers = self.gameovers_since_train
+        
+        # Add current window to history
+        self.history.append((moves, lines, gameovers))
+        
         if lines > 0:
             moves_per_line = inference_moves / lines
-            self.moves_per_line_history.append(moves_per_line)
             mpline_str = f"{moves_per_line:.1f}"
         else:
             mpline_str = "N/A"
             
-        if self.moves_per_line_history:
-            avg_mpl = sum(self.moves_per_line_history) / len(self.moves_per_line_history)
+        # Running average: Sum of moves / Sum of lines
+        total_moves_hist = sum(h[0] for h in self.history)
+        total_lines_hist = sum(h[1] for h in self.history)
+        
+        if total_lines_hist > 0:
+            avg_mpl = total_moves_hist / total_lines_hist
             mpline_str += f" (ave: {avg_mpl:.1f})"
+        else:
+             mpline_str += " (ave: N/A)"
 
         if gameovers > 0:
             lines_per_game = lines / gameovers
-            self.lines_per_game_history.append(lines_per_game)
             lines_per_game_str = f"{lines_per_game:.3f}"
         else:
             lines_per_game_str = "N/A"
             
-        if self.lines_per_game_history:
-            avg_lpg = sum(self.lines_per_game_history) / len(self.lines_per_game_history)
+        # Running average: Sum of lines / Sum of gameovers
+        total_gameovers_hist = sum(h[2] for h in self.history)
+        
+        if total_gameovers_hist > 0:
+            avg_lpg = total_lines_hist / total_gameovers_hist
             lines_per_game_str += f" (ave: {avg_lpg:.3f})"
+        else:
+            lines_per_game_str += " (ave: N/A)"
 
         epsilon_str = f"{self.epsilon:.3f}"
         print(f"Trained on {moves} moves; {lines} lines, {gameovers} Game Overs; Moves/Line = {mpline_str}; Lines/Game = {lines_per_game_str}; Epsilon = {epsilon_str}")

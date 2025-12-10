@@ -1,0 +1,8 @@
+--- Test 1 (Initial) ---
+Trained on 5000 moves; 20 lines, 4 Game Overs; Moves/Line = 250.0 (ave: 250.0); Lines/Game = 5.000 (ave: 5.000); Epsilon = 1.000
+
+--- Test 2 (Zero Lines/GO) ---
+Trained on 5000 moves; 0 lines, 0 Game Overs; Moves/Line = N/A (ave: 500.0); Lines/Game = N/A (ave: 5.000); Epsilon = 1.000
+
+--- Test 3 (Poor Performance) ---
+Trained on 5000 moves; 10 lines, 10 Game Overs; Moves/Line = 500.0 (ave: 500.0); Lines/Game = 1.000 (ave: 2.143); Epsilon = 1.000
