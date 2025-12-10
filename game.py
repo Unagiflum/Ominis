@@ -162,6 +162,17 @@ class Game:
         """Get the number of pieces for a short game (1-20)."""
         return max(1, min(20, self.train_params.get('pieces_tracked', 10)))
 
+    def get_watch_ai_fall_speed(self):
+        """
+        Watch AI uses a capped gravity speed:
+        - Levels 1-16: 250ms per step
+        - Level 17: 200ms, level 18: 150ms, level 19: 100ms, level 20+: 50ms minimum
+        """
+        if self.level <= 16:
+            return 250
+        # Drop 50ms per level starting at 17, but never below 50ms
+        return max(50, 250 - 50 * (self.level - 16))
+
     def get_grid_stats(self):
         """Returns (max_height, holes) for the current grid."""
         max_height = 0
@@ -807,7 +818,7 @@ class Game:
         Then advances the game by one tick.
         moves: List of strings, e.g., ["LEFT", "ROTATE_CW"]
         """
-        if self.state != "PLAYING" and self.state != "TRAINING":
+        if self.state not in ["PLAYING", "TRAINING", "WATCH_AI"]:
              return
 
         # Move Budgets
@@ -1041,26 +1052,27 @@ class Game:
 
         self.audio.update()
         
-        # Update music speed based on fall speed
-        ratio = (1000 / max(50, self.fall_speed)) ** 0.25
+        # Update music speed based on the active fall speed (human or watch AI)
+        effective_fall_speed = self.get_watch_ai_fall_speed() if self.state == "WATCH_AI" else self.fall_speed
+        ratio = (1000 / max(50, effective_fall_speed)) ** 0.25
         self.audio.set_speed(ratio)
 
-        if self.state == "PLAYING" or self.state == "WATCH_AI":
+        if self.state == "WATCH_AI":
+            # Watch AI uses its own capped gravity schedule (fast 250ms until level 17+)
+            current_fall_speed = self.get_watch_ai_fall_speed()
+            if current_time - self.fall_time > current_fall_speed:
+                self.step_ai_watch()
+                self.fall_time = current_time
+
+        elif self.state == "PLAYING":
             # Determine fall speed
             current_fall_speed = self.fall_speed
-            if self.state == "PLAYING" and self.input_manager.is_down_held():
+            if self.input_manager.is_down_held():
                 current_fall_speed = 80 # Slower fast drop (was 50)
             
             if current_time - self.fall_time > current_fall_speed:
                 self.game_tick()
                 self.fall_time = current_time
-
-        elif self.state == "WATCH_AI":
-             # AI plays at a readable speed
-             watch_speed = 250 # ms
-             if current_time - self.fall_time > watch_speed:
-                 self.step_ai_watch()
-                 self.fall_time = current_time
 
         elif self.state == "TRAINING":
             if self.train_params['visual_mode']:
