@@ -35,6 +35,10 @@ class MonteCarloAgent:
         self.gameovers_since_train = 0
         self.inference_moves_since_train = 0
         
+        # Benchmarking history
+        self.moves_per_line_history = deque(maxlen=100)
+        self.lines_per_game_history = deque(maxlen=100)
+        
         # Device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
@@ -259,14 +263,25 @@ class MonteCarloAgent:
         gameovers = self.gameovers_since_train
         if lines > 0:
             moves_per_line = inference_moves / lines
+            self.moves_per_line_history.append(moves_per_line)
             mpline_str = f"{moves_per_line:.1f}"
         else:
             mpline_str = "N/A"
+            
+        if self.moves_per_line_history:
+            avg_mpl = sum(self.moves_per_line_history) / len(self.moves_per_line_history)
+            mpline_str += f" (ave: {avg_mpl:.1f})"
+
         if gameovers > 0:
             lines_per_game = lines / gameovers
+            self.lines_per_game_history.append(lines_per_game)
             lines_per_game_str = f"{lines_per_game:.3f}"
         else:
             lines_per_game_str = "N/A"
+            
+        if self.lines_per_game_history:
+            avg_lpg = sum(self.lines_per_game_history) / len(self.lines_per_game_history)
+            lines_per_game_str += f" (ave: {avg_lpg:.3f})"
 
         epsilon_str = f"{self.epsilon:.3f}"
         print(f"Trained on {moves} moves; {lines} lines, {gameovers} Game Overs; Moves/Line = {mpline_str}; Lines/Game = {lines_per_game_str}; Epsilon = {epsilon_str}")
