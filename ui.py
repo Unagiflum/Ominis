@@ -304,35 +304,43 @@ class UI:
         reward_height = 270
         self.draw_group_box(padding, current_y, left_pane_width, reward_height, "Reward & Curriculum")
         
-        sy = current_y + 40
+        sy = current_y + 35
         # Min Randomness % (0% - 10%)
         min_rand_raw = params.get('epsilon_min_percent', 5)
         min_rand = max(0, min(10, min_rand_raw))
         s_rect = self.draw_slider(slider_x, sy, slider_width, min_rand / 10.0, f"Min. Randomness: {min_rand}%", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['epsilon_min_percent'] = s_rect
-        sy += 50
+        sy += 45
         
         # Learning Rate (0.0001 - 0.0050)
         lr = params.get('learning_rate', 0.001)
         lr = max(0.0001, min(0.005, lr))
         s_rect = self.draw_slider(slider_x, sy, slider_width, (lr - 0.0001) / 0.0049, f"Learning Rate: {lr:.4f}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['learning_rate'] = s_rect
-        sy += 50
+        sy += 45
         
+        # Move Discount (Gamma) (0.1 - 1.0)
+        gamma = params.get('gamma', 0.70)
+        gamma = max(0.1, min(1.0, gamma))
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (gamma - 0.1) / 0.9, f"Move Discount: {gamma:.2f}", mouse_pos, self.small_font, active=not is_training)
+        if not is_training: slider_rects['gamma'] = s_rect
+        sy += 45
+
         # Max Polyomino Size (1, 2, 3, 4, 5)
         # Range 1-5, span 4.
         s_rect = self.draw_slider(slider_x, sy, slider_width, (params['max_size'] - 1) / 4.0, f"Max Piece Size: {params['max_size']}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['max_size'] = s_rect
-        sy += 50
+        sy += 45
         
         # Short Game Length (how many pieces before auto-restart in short games mode)
         short_game_length = max(1, min(20, params.get('pieces_tracked', 10)))
         s_rect = self.draw_slider(slider_x, sy, slider_width, (short_game_length - 1) / 19.0, f"Short Game Length: {short_game_length}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['pieces_tracked'] = s_rect
-        sy += 40
+        sy += 25
         
         # Short Games Checkbox
-        short_games_chk_rect = self.draw_checkbox(slider_x, sy, params.get('short_games', False), "Short Games", mouse_pos, active=not is_training)
+        # Use smaller font for this one to fit
+        short_games_chk_rect = self.draw_checkbox(slider_x, sy, params.get('short_games', False), "Short Games", mouse_pos, active=not is_training, font=self.small_font)
         
         # Bottom Controls
         bottom_y = screen_height - padding - 50 
@@ -405,7 +413,7 @@ class UI:
         resume_rect = resume_text.get_rect(center=(x + width // 2, y + height // 2 + 60))
         self.screen.blit(resume_text, resume_rect)
 
-    def draw_checkbox(self, x, y, checked, label, mouse_pos=None, active=True):
+    def draw_checkbox(self, x, y, checked, label, mouse_pos=None, active=True, font=None):
         # Box
         rect = pygame.Rect(x, y, 20, 20)
         
@@ -420,7 +428,8 @@ class UI:
             pygame.draw.rect(self.screen, color, (x + 4, y + 4, 12, 12), border_radius=2)
             
         # Label
-        text = self.font.render(label, True, color)
+        use_font = font if font else self.font
+        text = use_font.render(label, True, color)
         self.screen.blit(text, (x + 30, y))
         
         return rect

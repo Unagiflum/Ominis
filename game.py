@@ -67,15 +67,16 @@ class Game:
 
         
         # Training Parameters
+        # Training Parameters
         self.train_params = {
             'visual_mode': True,
             'hl_size_idx': 1, # 0=128, 1=256, 2=512
-            'hl_count': 2,
             'hl_count': 2,
             'epsilon_min_percent': 5,
             'learning_rate': 0.001,
             'max_size': 5,
             'pieces_tracked': 10,
+            'gamma': 0.70,
             'short_games': False
         }
         self.train_slider_rects = {}
@@ -85,7 +86,7 @@ class Game:
         self.das_delay = 200 # ms before repeat starts
         self.das_repeat = 50 # ms between repeats
         self.left_held_time = 0
-        self.left_held_time = 0
+        self.right_held_time = 0
         self.agent = None
         self.training_step_count = 0
         self.current_trajectory = [] # Buffer for current piece's moves
@@ -1356,6 +1357,13 @@ class Game:
             # Map 0-1 to 0.0001 - 0.0050
             lr = 0.0001 + (val * 0.0049)
             self.train_params['learning_rate'] = round(lr, 5)
+            if self.agent: self.agent.update_hyperparameters()
+        elif self.active_slider == 'gamma':
+            # Map 0-1 to 0.1 - 1.0
+            raw_gamma = 0.1 + (val * 0.9)
+            # Snap to 0.05 increments
+            gamma = round(raw_gamma * 20) / 20.0
+            self.train_params['gamma'] = max(0.1, min(1.0, gamma))
             if self.agent: self.agent.update_hyperparameters()
         elif self.active_slider == 'max_size':
             # Map 0-1 to 1, 2, 3, 4, 5
