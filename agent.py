@@ -481,8 +481,17 @@ class MonteCarloAgent:
         if total_gameovers > 0:
             avg_lpg = total_lines / total_gameovers
             
+        import os
+        
+        # Check if file exists before opening in append mode
+        # If it doesn't exist (e.g. user deleted it), we need to write the header
+        write_header = not os.path.exists(self.csv_path)
+            
         try:
             with open(self.csv_path, 'a') as f:
+                if write_header:
+                     f.write("Batch, Moves per Line, Lines per Game\n")
+                
                 # Format: Batch, Moves_per_Line, Lines_per_Game
                 f.write(f"{self.training_steps}, {avg_mpl:.1f}, {avg_lpg:.3f}\n")
         except PermissionError:
