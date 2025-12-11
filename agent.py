@@ -289,7 +289,7 @@ class MonteCarloAgent:
             
         # Running average: Sum of lines / Sum of gameovers
         total_gameovers_hist = sum(h[2] for h in self.history)
-        
+            
         if total_gameovers_hist > 0:
             avg_lpg = total_lines_hist / total_gameovers_hist
             lines_per_game_str += f" (ave: {avg_lpg:.3f})"
@@ -297,7 +297,8 @@ class MonteCarloAgent:
             lines_per_game_str += " (ave: N/A)"
 
         epsilon_str = f"{self.epsilon:.3f}"
-        print(f"Trained on {moves} moves; {lines} lines, {gameovers} Game Overs; Moves/Line = {mpline_str}; Lines/Game = {lines_per_game_str}; Epsilon = {epsilon_str}")
+        gamma_str = f"{self.gamma:.2f}"
+        print(f"Trained on {moves} moves; {lines} lines, {gameovers} Game Overs; Moves/Line = {mpline_str}; Lines/Game = {lines_per_game_str}; Epsilon = {epsilon_str}; Gamma = {gamma_str}")
 
         self.total_samples_since_train = 0
         self.lines_since_train = 0
