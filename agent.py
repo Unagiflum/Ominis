@@ -234,7 +234,7 @@ class MonteCarloAgent:
         reward = 0
 
         if lines_cleared > 0:
-            reward += 20 * lines_cleared
+            reward += 50 * lines_cleared
 
         if game_over:
             reward -= 50
@@ -245,12 +245,12 @@ class MonteCarloAgent:
             reward += 20
         else:
             # Bad placement: one of the conditions failed
-            reward -= 40
+            reward -= 20
 
         if placement_height_delta < 1:
-            reward += 20
+            reward += 0
 
-        # This rewards sliding under overhangs or clearing lines with holes beneath
+        # This rewards sliding under overhangs or clearing lines with holes beneath and punishes creating holes
         if net_holes != 0:
             reward += 20 * (-net_holes)
 
