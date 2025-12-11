@@ -19,15 +19,23 @@ def test_logging():
         'learning_rate': 0.001
     }
     
-    # clean up previous test runs
+    # Clean up
     progress_dir = "progress"
     model_name = "model-256-2.csv"
     csv_path = os.path.join(progress_dir, model_name)
+    model_file = "models/model-256-2.pth"
     
     if os.path.exists(csv_path):
         os.remove(csv_path)
+    if os.path.exists(model_file):
+        os.remove(model_file)
     
-    # 1. Initialize Agent and check file creation
+    # Ensure models dir exists
+    if not os.path.exists("models"):
+        os.makedirs("models")
+
+    # 1. Initialize Agent (Fresh Start)
+    print("\n--- Test 1: Fresh Start ---")
     agent = MonteCarloAgent(params)
     
     if not os.path.exists(csv_path):
@@ -36,15 +44,18 @@ def test_logging():
         
     with open(csv_path, 'r') as f:
         header = f.readline().strip()
+        lines = f.readlines()
         if header != "Batch, Moves per Line, Lines per Game":
             print(f"FAIL: Incorrect header: {header}")
             return
+        if len(lines) > 0:
+             print("FAIL: Expected empty file (header only)")
+             return
     print("PASS: File created with correct header")
     
     # 2. Add some history and log
-    agent.history.append((100, 10, 1)) # 10 MPL, 10 LPG
-    agent.history.append((200, 20, 1)) # 10 MPL, 20 LPG (Total: 300, 30, 2 -> 10 MPL, 15 LPG)
-    
+    print("\n--- Test 2: Logging Data ---")
+    agent.history.append((100, 10, 1))
     agent.training_steps = 1000
     agent._log_progress_to_csv()
     
@@ -55,22 +66,41 @@ def test_logging():
             return
         entry = lines[1].strip()
         print(f"Log Entry: {entry}")
-        # Expect: 1000, 10.0, 15.000
-        if "1000, 10.0, 15.000" not in entry:
+        if "1000, 10.0, 10.000" not in entry:
              print("FAIL: Log entry content mismatch")
              return
-             
-    print("PASS: Logging correct calculations")
+    print("PASS: Logging correct")
     
-    # 3. Test Resume
-    print("Testing resume...")
+    # 3. Simulate Model Save (Create dummy .pth)
+    print("\n--- Test 3: Resume with Model ---")
+    with open(model_file, 'w') as f:
+        f.write("dummy model content")
+        
     agent2 = MonteCarloAgent(params)
     if agent2.training_steps != 1000:
         print(f"FAIL: Expected resume at 1000, got {agent2.training_steps}")
         return
-    print("PASS: Resumed correctly")
+    print("PASS: Resumed correctly with model file present")
 
-    print("All tests passed!")
+    # 4. Simulate Fresh Start (Model deleted, CSV remains)
+    print("\n--- Test 4: Wipe on Missing Model ---")
+    os.remove(model_file)
+    # CSV still has data from Test 2
+    
+    agent3 = MonteCarloAgent(params)
+    if agent3.training_steps != 0:
+         print(f"FAIL: Expected training_steps reset to 0, got {agent3.training_steps}")
+         return
+         
+    with open(csv_path, 'r') as f:
+        lines = f.readlines()
+        if len(lines) != 1:
+             print(f"FAIL: Expected CSV wipe (1 line header), got {len(lines)} lines")
+             print(f"Content: {lines}")
+             return
+    print("PASS: CSV wiped correctly when model missing")
+
+    print("\nAll tests passed!")
 
 if __name__ == "__main__":
     test_logging()

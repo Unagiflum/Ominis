@@ -85,8 +85,15 @@ class MonteCarloAgent:
                 
         self.csv_path = os.path.join(progress_dir, f"{model_name}.csv")
         
-        # Check if file exists to resume count
-        if os.path.exists(self.csv_path):
+        # Check for model existence to determine if we should resume or wipe
+        # Model path is assumed to be in "models/" folder relative to CWD, consistent with game.py
+        model_path = os.path.join("models", f"{model_name}.pth")
+        
+        resume_logging = False
+        if os.path.exists(self.csv_path) and os.path.exists(model_path):
+            resume_logging = True
+            
+        if resume_logging:
             try:
                 with open(self.csv_path, 'r') as f:
                     lines = f.readlines()
@@ -104,7 +111,7 @@ class MonteCarloAgent:
             except Exception as e:
                 print(f"Error reading existing CSV: {e}")
         else:
-            # Create new file with header
+            # Create new file with header (wiping if exists)
             try:
                 with open(self.csv_path, 'w') as f:
                     f.write("Batch, Moves per Line, Lines per Game\n")
