@@ -237,24 +237,22 @@ class MonteCarloAgent:
             reward += 20 * lines_cleared
 
         if game_over:
-            reward -= 20
+            reward -= 50
             
-        # Good placement reward (+20) - only if ALL THREE conditions are met:
-        # 1. Max height does not rise
-        # 2. Lowest surviving block is within N rows of the lowest column (N=3)
-        # 3. Net holes are not increased (net_holes <= 0)
         placement_height_delta = max(0, lowest_block_height_after - lowest_col_height_before)
-        good_move = (max_height_after <= max_height_before and placement_height_delta <= 3 and net_holes <= 0)
+        good_move = (max_height_after <= max_height_before and net_holes <= 0)
         if good_move:
             reward += 20
         else:
             # Bad placement: one of the conditions failed
-            reward -= 20
-        
-        # Bonus for decreasing net holes (+20)
-        # This rewards sliding under overhangs or clearing lines with holes beneath
-        if net_holes < 0:
+            reward -= 40
+
+        if placement_height_delta < 1:
             reward += 20
+
+        # This rewards sliding under overhangs or clearing lines with holes beneath
+        if net_holes != 0:
+            reward += 20 * (-net_holes)
 
         return reward
 
