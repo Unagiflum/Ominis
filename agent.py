@@ -56,7 +56,60 @@ class MonteCarloAgent:
         # Lateral: 0=Left, 1=Stay, 2=Right
         # Rotation: 0=CCW, 1=Stay, 2=CW 
         # Encoding: action_idx = lateral_idx * 3 + rotation_idx
+        # Encoding: action_idx = lateral_idx * 3 + rotation_idx
         self.num_actions = 9
+
+        # Logging initialization
+        self.training_steps = 0
+        self._init_logging()
+
+    def _init_logging(self):
+        """Initialize CSV logging for training progress."""
+        import os
+        
+        # Determine filename
+        # Model name format: model-{size}-{count}.pth
+        # We want: model-{size}-{count}.csv
+        hidden_size = self.HL_SIZES[self.params['hl_size_idx']]
+        hidden_count = self.params['hl_count']
+        model_name = f"model-{hidden_size}-{hidden_count}"
+        
+        # Ensure progress directory exists
+        progress_dir = "progress"
+        if not os.path.exists(progress_dir):
+            try:
+                os.makedirs(progress_dir)
+            except OSError as e:
+                print(f"Error creating progress directory: {e}")
+                return
+                
+        self.csv_path = os.path.join(progress_dir, f"{model_name}.csv")
+        
+        # Check if file exists to resume count
+        if os.path.exists(self.csv_path):
+            try:
+                with open(self.csv_path, 'r') as f:
+                    lines = f.readlines()
+                    if len(lines) > 1:
+                        last_line = lines[-1].strip()
+                        if last_line:
+                            try:
+                                # Format: Batch, Moves per Line, Lines per Game
+                                # 1000, 181.4, 8.041
+                                last_batch = int(last_line.split(',')[0])
+                                self.training_steps = last_batch
+                                print(f"Resuming logging from batch {self.training_steps}")
+                            except ValueError:
+                                print("Could not parse last batch from CSV, starting at 0")
+            except Exception as e:
+                print(f"Error reading existing CSV: {e}")
+        else:
+            # Create new file with header
+            try:
+                with open(self.csv_path, 'w') as f:
+                    f.write("Batch, Moves per Line, Lines per Game\n")
+            except Exception as e:
+                print(f"Error creating CSV file: {e}")
 
     def get_state(self, game):
         # 1. Board Channel (12 x 34)
@@ -265,6 +318,12 @@ class MonteCarloAgent:
         # Add current window to history
         self.history.append((moves, lines, gameovers))
         
+        self.training_steps += 1
+        
+        # Log to CSV every 1000 batches
+        if self.training_steps > 0 and self.training_steps % 1000 == 0:
+            self._log_progress_to_csv()
+        
         if lines > 0:
             moves_per_line = inference_moves / lines
             mpline_str = f"{moves_per_line:.1f}"
@@ -401,6 +460,30 @@ class MonteCarloAgent:
 
 
 
+
+    def _log_progress_to_csv(self):
+        """Append progress stats to CSV file."""
+        # Calculate running averages from history
+        total_moves = sum(h[0] for h in self.history)
+        total_lines = sum(h[1] for h in self.history)
+        total_gameovers = sum(h[2] for h in self.history)
+        
+        avg_mpl = 0.0
+        if total_lines > 0:
+            avg_mpl = total_moves / total_lines
+            
+        avg_lpg = 0.0
+        if total_gameovers > 0:
+            avg_lpg = total_lines / total_gameovers
+            
+        try:
+            with open(self.csv_path, 'a') as f:
+                # Format: Batch, Moves_per_Line, Lines_per_Game
+                f.write(f"{self.training_steps}, {avg_mpl:.1f}, {avg_lpg:.3f}\n")
+        except PermissionError:
+            print(f"Skipping log for batch {self.training_steps}: File is locked.")
+        except Exception as e:
+            print(f"Error writing to CSV: {e}")
 
     def update_hyperparameters(self):
         """Update hyperparameters from self.params (which are shared with UI)."""

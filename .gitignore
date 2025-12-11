@@ -3,4 +3,5 @@ __pycache__/
 .env
 .venv
 models/*.pth
+progress/*.csv
 settings.json
