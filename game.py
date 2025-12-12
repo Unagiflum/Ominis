@@ -326,7 +326,7 @@ class Game:
              # In training, maybe we force all types enabled? Or respect checkboxes?
              # User said "Max size polyomino to include". Implies we include everything up to that size.
              # So let's enable all flags if in training, but filter by size.
-             self.allowed_shapes = get_allowed_shapes(True, True, True, max_size)
+             self.allowed_shapes = get_allowed_shapes(True, True, True, max_size, weighted=True)
         else:
              self.allowed_shapes = get_allowed_shapes(self.include_pentominoes, self.include_tetrominoes, self.include_ominis)
         
