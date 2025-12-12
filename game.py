@@ -1172,19 +1172,24 @@ class Game:
                      else:
                          self.state = "PLAYING" if self.state != "WATCH_AI" else "WATCH_AI"
                 
+                was_training = (self.state == "TRAINING")
+                
                 self.current_piece = self.next_piece
                 self.start_stats = self.get_grid_stats()  # Update for new piece
                 self.next_piece = self.spawn_piece()
+                game_over_after_spawn = False
                 if self.grid.check_collision(self.current_piece):
+                    game_over_after_spawn = True
                     self.state = "GAMEOVER"
                     self.audio.stop()
                 
-                # Process pending reward if in training mode
-                if self.state == "TRAINING" and self.pending_reward_event is not None:
+                # Process pending reward even if game over happened after the clear
+                if was_training and self.pending_reward_event is not None:
                     trajectory, reward_value, pending_lines, pending_game_over = self.pending_reward_event
-                    self.apply_trajectory_reward(trajectory, reward_value, pending_lines, pending_game_over)
+                    reward_game_over = pending_game_over or game_over_after_spawn
+                    self.apply_trajectory_reward(trajectory, reward_value, pending_lines, reward_game_over)
                     self.pending_reward_event = None
-                    if pending_game_over:
+                    if reward_game_over:
                         self.finish_training_round()
 
     def draw(self):

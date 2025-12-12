@@ -316,7 +316,7 @@ class MonteCarloAgent:
             return
         
         # Capture stats for logging before reset
-        moves = self.total_samples_since_train
+        samples_trained_on = self.total_samples_since_train
         lines = self.lines_since_train
         inference_moves = self.inference_moves_since_train
 
@@ -325,7 +325,7 @@ class MonteCarloAgent:
         gameovers = self.gameovers_since_train
         
         # Add current window to history
-        self.history.append((moves, lines, gameovers))
+        self.history.append((inference_moves, lines, gameovers))
         
         self.training_steps += 1
         
@@ -366,7 +366,7 @@ class MonteCarloAgent:
 
         epsilon_str = f"{self.epsilon:.3f}"
         gamma_str = f"{self.gamma:.2f}"
-        print(f"Trained on {moves} moves; {lines} lines, {gameovers} Game Overs; Moves/Line = {mpline_str}; Lines/Game = {lines_per_game_str}; Epsilon = {epsilon_str}; Gamma = {gamma_str}")
+        print(f"Trained on {samples_trained_on} samples; {lines} lines, {gameovers} Game Overs; Moves/Line = {mpline_str}; Lines/Game = {lines_per_game_str}; Epsilon = {epsilon_str}; Gamma = {gamma_str}")
 
         self.total_samples_since_train = 0
         self.lines_since_train = 0
