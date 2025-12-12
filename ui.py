@@ -254,7 +254,7 @@ class UI:
                 
             current_y += line_height
 
-    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False, volume=0.5, epsilon_bump_val=0.20):
+    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False, volume=0.5, epsilon_bump_val=0.10):
 
         self.draw_background()
         
@@ -293,7 +293,7 @@ class UI:
         
         # Epsilon Reset Button
         # Moved up (sy + 30 instead of 45) and smaller height (25 instead of 30)
-        btn_eps_reset_rect = self.draw_button(slider_x, sy + 30, slider_width, 25, f"Eps {epsilon_bump_val}", not is_training, mouse_pos, font=self.small_font)
+        btn_eps_reset_rect = self.draw_button(slider_x, sy + 30, slider_width, 25, f"Eps {epsilon_bump_val:.2f}", not is_training, mouse_pos, font=self.small_font)
 
 
 

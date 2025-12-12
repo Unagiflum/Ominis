@@ -62,7 +62,7 @@ class Game:
         self.dragging_slider = False
         
         # Architecture UI
-        self.epsilon_bump_value = 0.20
+        self.epsilon_bump_value = 0.10
         self.btn_eps_reset_rect = None
 
         
@@ -818,9 +818,12 @@ class Game:
         Executes moves based on budget: 3 Lateral, 3 Rotation (vertical/hard drops only if provided).
         Then advances the game by one tick.
         moves: List of strings, e.g., ["LEFT", "ROTATE_CW"]
+        Returns:
+            (lateral_idx, rotation_idx) describing what actually changed the piece
+            (0=Left/CCW, 1=No change, 2=Right/CW). If nothing changed, returns (1, 1).
         """
-        if self.state not in ["PLAYING", "TRAINING", "WATCH_AI"]:
-             return
+        if self.state not in ["PLAYING", "TRAINING", "WATCH_AI"] or not self.current_piece:
+             return (1, 1)
 
         # Move Budgets
         budget = {
@@ -829,16 +832,25 @@ class Game:
             "ROTATION": 1
         }
 
+        actual_lateral_idx = 1
+        actual_rotation_idx = 1
+
         for move in moves:
             if move == "LEFT":
                 if budget["LATERAL"] > 0:
+                    prev_x = self.current_piece.x
                     if not self.grid.check_collision(self.current_piece, offset_x=-1):
                         self.current_piece.x -= 1
+                    if self.current_piece.x < prev_x:
+                        actual_lateral_idx = 0
                     budget["LATERAL"] -= 1
             elif move == "RIGHT":
                 if budget["LATERAL"] > 0:
+                    prev_x = self.current_piece.x
                     if not self.grid.check_collision(self.current_piece, offset_x=1):
                         self.current_piece.x += 1
+                    if self.current_piece.x > prev_x:
+                        actual_lateral_idx = 2
                     budget["LATERAL"] -= 1
             elif move == "DOWN":
                 if budget["VERTICAL"] > 0:
@@ -848,15 +860,21 @@ class Game:
                     budget["VERTICAL"] -= 1
             elif move == "ROTATE_CW":
                 if budget["ROTATION"] > 0:
+                    prev_shape = set(self.current_piece.shape)
                     self.current_piece.rotate_right()
                     if self.grid.check_collision(self.current_piece):
                         self.current_piece.rotate_left()
+                    elif set(self.current_piece.shape) != prev_shape:
+                        actual_rotation_idx = 2
                     budget["ROTATION"] -= 1
             elif move == "ROTATE_CCW":
                 if budget["ROTATION"] > 0:
+                    prev_shape = set(self.current_piece.shape)
                     self.current_piece.rotate_left()
                     if self.grid.check_collision(self.current_piece):
                         self.current_piece.rotate_right()
+                    elif set(self.current_piece.shape) != prev_shape:
+                        actual_rotation_idx = 0
                     budget["ROTATION"] -= 1
             elif move == "HARD_DROP":
                  # Hard drop consumes all vertical budget? Or just happens?
@@ -875,6 +893,7 @@ class Game:
 
         # Advance game state
         self.game_tick()
+        return (actual_lateral_idx, actual_rotation_idx)
 
     def step_ai_training(self):
         if not self.agent:
@@ -884,10 +903,10 @@ class Game:
         state = self.agent.get_state(self)
         
         # 2. Select Action (returns joint action index 0-8)
-        action = self.agent.select_action(state)
+        selected_action = self.agent.select_action(state)
         # Count every inference step, even if it is later discarded from memory
         self.agent.record_inference_step()
-        lat_idx, rot_idx = self.agent.decode_action(action)
+        lat_idx, rot_idx = self.agent.decode_action(selected_action)
         
         # Map indices to moves
         moves = []
@@ -913,7 +932,7 @@ class Game:
         self.clearing_lines = []
 
         # Execute the moves
-        self.step_ai(moves)
+        actual_lateral_idx, actual_rotation_idx = self.step_ai(moves)
         
         lines_after = self.lines_cleared_total
         lines_cleared = lines_after - lines_before
@@ -935,7 +954,8 @@ class Game:
         next_state = self.agent.get_state(self)
         
         # 5. Buffer Step
-        self.current_trajectory.append((state, action, next_state))
+        actual_action = self.agent.encode_action(actual_lateral_idx, actual_rotation_idx)
+        self.current_trajectory.append((state, actual_action, next_state))
         
         # 6. If Piece Locked, Calculate Reward and Train
         if piece_locked:
