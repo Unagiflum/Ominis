@@ -272,9 +272,10 @@ class UI:
         arch_height = 160
         self.draw_group_box(padding, current_y, left_pane_width, arch_height, "Architecture")
         
-        # Hidden Layer Size (128, 256, 512)
-        hl_sizes = [128, 256, 512]
-        hl_size_idx = int(params['hl_size_idx'])
+        # Hidden Layer Size (128, 256, 512, 1024, 2048)
+        hl_sizes = [128, 256, 512, 1024, 2048]
+        max_hl_idx = max(1, len(hl_sizes) - 1)
+        hl_size_idx = max(0, min(max_hl_idx, int(params.get('hl_size_idx', 1))))
         hl_size_val = hl_sizes[hl_size_idx]
         
         slider_rects = {}
@@ -283,7 +284,7 @@ class UI:
         
         sy = current_y + 40
         # Hidden Layer Size
-        s_rect = self.draw_slider(slider_x, sy, slider_width, params['hl_size_idx'] / 2.0, f"Hidden Size: {hl_size_val}", mouse_pos, self.small_font, active=not is_training)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, hl_size_idx / max_hl_idx, f"Hidden Size: {hl_size_val}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['hl_size'] = s_rect
         sy += 50
         

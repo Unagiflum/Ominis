@@ -43,8 +43,12 @@ class MonteCarloAgent:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Model
-        self.HL_SIZES = [128, 256, 512]
-        hidden_size = self.HL_SIZES[self.params['hl_size_idx']]
+        self.HL_SIZES = [128, 256, 512, 1024, 2048]
+        hl_size_idx = int(self.params.get('hl_size_idx', 1))
+        hl_size_idx = max(0, min(len(self.HL_SIZES) - 1, hl_size_idx))
+        # Keep the shared params in-range so UI/agent stay aligned
+        self.params['hl_size_idx'] = hl_size_idx
+        hidden_size = self.HL_SIZES[hl_size_idx]
         hidden_count = self.params['hl_count']
         
         # Main network (updated every training step with Monte Carlo targets)

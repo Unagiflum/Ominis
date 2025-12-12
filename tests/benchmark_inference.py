@@ -73,19 +73,19 @@ def main():
     # Configurations to test
     # (hidden_size, hidden_count)
     configs = [
-        # Current like configs (guessing roughly based on agent.py [128, 256, 512])
+        # Slider options (powers of two from 128 to 2048)
         (128, 2),
         (256, 2),
         (512, 2),
+        (1024, 2),
+        (2048, 2),
         
         # Scaling up - Deeper
         (512, 4),
         (512, 8),
         
         # Scaling up - Wider
-        (1024, 2),
         (1024, 4),
-        (2048, 2),
         (2048, 4),
         
         # Large

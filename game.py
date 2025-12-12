@@ -64,13 +64,12 @@ class Game:
         # Architecture UI
         self.epsilon_bump_value = 0.10
         self.btn_eps_reset_rect = None
+        self.hl_sizes = [128, 256, 512, 1024, 2048]
 
-        
-        # Training Parameters
         # Training Parameters
         self.train_params = {
             'visual_mode': True,
-            'hl_size_idx': 1, # 0=128, 1=256, 2=512
+            'hl_size_idx': 1, # index into self.hl_sizes (0=128 ... 4=2048)
             'hl_count': 2,
             'epsilon_min_percent': 5,
             'learning_rate': 0.001,
@@ -100,13 +99,13 @@ class Game:
         self.short_games_move_count = 0
         
         self.load_settings()
+        # Ensure hidden size index stays within the available architecture options
+        self.train_params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, int(self.train_params.get('hl_size_idx', 1))))
 
     def get_model_filename(self):
         """Generates filename based on current architecture params."""
-        # We need the sizes from Agent or define them here.
-        # Let's define them here to match Agent.
-        hl_sizes = [128, 256, 512]
-        size = hl_sizes[self.train_params['hl_size_idx']]
+        hl_size_idx = max(0, min(len(self.hl_sizes) - 1, int(self.train_params['hl_size_idx'])))
+        size = self.hl_sizes[hl_size_idx]
         count = self.train_params['hl_count']
         
         # Ensure models dir exists
@@ -1361,9 +1360,10 @@ class Game:
         val = max(0.0, min(1.0, rel_x / rect.width))
         
         if self.active_slider == 'hl_size':
-            # Map 0-1 to 0, 1, 2
-            idx = int(val * 2.99)
-            self.train_params['hl_size_idx'] = idx
+            max_idx = len(self.hl_sizes) - 1
+            # Map 0-1 to available hidden size options
+            idx = int(val * (max_idx + 0.99))
+            self.train_params['hl_size_idx'] = max(0, min(max_idx, idx))
         elif self.active_slider == 'hl_count':
             # Map 0-1 to 1, 2, 3, 4
             count = 1 + int(val * 3.99)
