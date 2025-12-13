@@ -406,8 +406,8 @@ class MonteCarloAgent:
         
         self.training_steps += 1
         
-        # Log to CSV every 1000 batches
-        if self.training_steps > 0 and self.training_steps % 1000 == 0:
+        # Log to CSV every 500 batches
+        if self.training_steps > 0 and self.training_steps % 500 == 0:
             self._log_progress_to_csv()
         
         if lines > 0:
