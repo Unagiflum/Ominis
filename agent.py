@@ -246,7 +246,7 @@ class MonteCarloAgent:
         placement_height_delta = max(0, lowest_block_height_after - lowest_col_height_before)
         good_move = (max_height_after <= max_height_before and net_holes <= 0)
         if good_move:
-            reward += 20
+            reward += 50
         else:
             # Bad placement: one of the conditions failed
             reward -= 20
