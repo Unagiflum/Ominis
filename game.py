@@ -62,7 +62,7 @@ class Game:
         self.dragging_slider = False
         
         # Architecture UI
-        self.epsilon_bump_value = 0.10
+        self.epsilon_bump_value = 0.2
         self.btn_eps_reset_rect = None
         self.hl_sizes = [128, 256, 512, 1024, 2048]
 

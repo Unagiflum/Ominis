@@ -254,7 +254,7 @@ class UI:
                 
             current_y += line_height
 
-    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False, volume=0.5, epsilon_bump_val=0.10):
+    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False, volume=0.5, epsilon_bump_val=0.2):
 
         self.draw_background()
         
