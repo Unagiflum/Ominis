@@ -950,14 +950,11 @@ class Game:
         else:
             piece_locked = (lines_cleared > 0) or done or (self.current_piece is not piece_before)
         
-        # 4. Get New State
-        next_state = self.agent.get_state(self)
-        
-        # 5. Buffer Step
+        # 4. Buffer Step
         actual_action = self.agent.encode_action(actual_lateral_idx, actual_rotation_idx)
-        self.current_trajectory.append((state, actual_action, next_state))
+        self.current_trajectory.append((state, actual_action))
         
-        # 6. If Piece Locked, Calculate Reward and Train
+        # 5. If Piece Locked, Calculate Reward and Train
         if piece_locked:
             piece_limit_reached = False
 

@@ -340,11 +340,11 @@ class MonteCarloAgent:
         Add a complete piece trajectory to memory with Monte Carlo return.
         
         Args:
-            trajectory: List of (state, action, next_state) tuples for one piece
+            trajectory: List of (state, action_idx) tuples for one piece
             final_reward: R_piece - scalar Monte Carlo return for this piece
         """
         for i in range(len(trajectory)):
-            state, action, next_state = trajectory[i]
+            state, action_idx = trajectory[i]
             
             # Monte Carlo: Apply gamma discount to the final reward
             # The last move (index len-1) gets final_reward * gamma^0 = final_reward
@@ -352,20 +352,20 @@ class MonteCarloAgent:
             steps_from_end = len(trajectory) - 1 - i
             R_piece = final_reward * (self.gamma ** steps_from_end)
             
-            # Store simplified tuple: (state, action, R_piece)
-            self.remember(state, action, R_piece)
+            # Store simplified tuple: (state, action_idx, R_piece)
+            self.remember(state, action_idx, R_piece)
 
 
-    def remember(self, state, action, R_piece):
+    def remember(self, state, action_idx, R_piece):
         """
-        Store a (state, action, Monte Carlo return) tuple in replay memory.
+        Store a (state, action_idx, Monte Carlo return) tuple in replay memory.
         
         Args:
             state: (grid_input, next_piece_input) tuple
-            action: [lateral_idx, rotation_idx] list
+            action_idx: Joint action index (0-8)
             R_piece: Scalar Monte Carlo return for the piece trajectory
         """
-        self.memory.append((state, action, R_piece))
+        self.memory.append((state, action_idx, R_piece))
 
     def record_training_stats(self, samples_added, lines_cleared, is_game_over):
         """
