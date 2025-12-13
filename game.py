@@ -902,7 +902,8 @@ class Game:
         state = self.agent.get_state(self)
         
         # 2. Select Action (returns joint action index 0-8)
-        selected_action = self.agent.select_action(state)
+        action_mask = self.agent.get_action_mask(self)
+        selected_action = self.agent.select_action(state, action_mask=action_mask)
         # Count every inference step, even if it is later discarded from memory
         self.agent.record_inference_step()
         lat_idx, rot_idx = self.agent.decode_action(selected_action)
@@ -1048,7 +1049,8 @@ class Game:
         # We might want to force epsilon=0 for watching?
         old_eps = self.agent.epsilon
         self.agent.epsilon = 0 # Force greedy
-        action = self.agent.select_action(state)
+        action_mask = self.agent.get_action_mask(self)
+        action = self.agent.select_action(state, action_mask=action_mask)
         self.agent.epsilon = old_eps
         
         lat_idx, rot_idx = self.agent.decode_action(action)

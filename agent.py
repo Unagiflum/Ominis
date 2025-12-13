@@ -1,6 +1,7 @@
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
+import copy
 import random
 import numpy as np
 from collections import deque
@@ -182,7 +183,67 @@ class MonteCarloAgent:
                     
         return grid_input, next_piece_vec
 
-    def select_action(self, state):
+    def get_action_mask(self, game):
+        """
+        Compute a boolean mask of valid joint actions for the current game state.
+
+        An action is considered valid if executing its lateral/rotation commands would
+        actually produce that same (lateral_idx, rotation_idx) outcome (i.e., no
+        collision/no-op for a commanded move).
+        """
+        mask = np.zeros(self.num_actions, dtype=np.bool_)
+
+        # Always allow "do nothing" (stay + stay)
+        stay_action = self.encode_action(1, 1)
+        mask[stay_action] = True
+
+        if not getattr(game, "current_piece", None):
+            return mask
+
+        for action_idx in range(self.num_actions):
+            lat_idx, rot_idx = self.decode_action(action_idx)
+            test_piece = copy.deepcopy(game.current_piece)
+
+            actual_lateral_idx = 1
+            actual_rotation_idx = 1
+
+            # Lateral move (applied first, matching step_ai_training)
+            if lat_idx == 0:
+                prev_x = test_piece.x
+                if not game.grid.check_collision(test_piece, offset_x=-1):
+                    test_piece.x -= 1
+                if test_piece.x < prev_x:
+                    actual_lateral_idx = 0
+            elif lat_idx == 2:
+                prev_x = test_piece.x
+                if not game.grid.check_collision(test_piece, offset_x=1):
+                    test_piece.x += 1
+                if test_piece.x > prev_x:
+                    actual_lateral_idx = 2
+
+            # Rotation move (applied after lateral, matching step_ai_training)
+            if rot_idx == 2:
+                prev_shape = set(test_piece.shape)
+                test_piece.rotate_right()
+                if game.grid.check_collision(test_piece):
+                    test_piece.rotate_left()
+                elif set(test_piece.shape) != prev_shape:
+                    actual_rotation_idx = 2
+            elif rot_idx == 0:
+                prev_shape = set(test_piece.shape)
+                test_piece.rotate_left()
+                if game.grid.check_collision(test_piece):
+                    test_piece.rotate_right()
+                elif set(test_piece.shape) != prev_shape:
+                    actual_rotation_idx = 0
+
+            mask[action_idx] = (actual_lateral_idx == lat_idx and actual_rotation_idx == rot_idx)
+
+        # Ensure stay action remains valid even if logic changes above
+        mask[stay_action] = True
+        return mask
+
+    def select_action(self, state, action_mask=None):
         """Select action using epsilon-greedy with joint action space.
         
         Returns:
@@ -190,11 +251,21 @@ class MonteCarloAgent:
                        (lateral_idx * 3 + rotation_idx)
         """
         grid_input, next_piece_input = state
+
+        valid_action_indices = None
+        if action_mask is not None:
+            action_mask = np.asarray(action_mask, dtype=np.bool_)
+            valid_action_indices = np.flatnonzero(action_mask)
+            if valid_action_indices.size == 0:
+                valid_action_indices = np.array([self.encode_action(1, 1)], dtype=np.int64)
         
         self.model.eval()
         if random.random() <= self.epsilon:
-            # Random joint action
-            return random.randint(0, self.num_actions - 1)
+            if valid_action_indices is None:
+                # Random joint action (unmasked)
+                return random.randint(0, self.num_actions - 1)
+            # Random joint action (masked)
+            return int(random.choice(valid_action_indices))
         
         # Predict Q-values for all 9 joint actions
         grid_tensor = torch.FloatTensor(grid_input).unsqueeze(0).to(self.device)
@@ -202,6 +273,10 @@ class MonteCarloAgent:
         
         with torch.no_grad():
             q_values = self.model(grid_tensor, next_tensor)
+
+        if action_mask is not None:
+            mask_tensor = torch.tensor(action_mask, dtype=torch.bool, device=q_values.device).unsqueeze(0)
+            q_values = q_values.masked_fill(~mask_tensor, -1.0e9)
             
         # Greedy action selection (argmax) - pick highest Q-value
         action_idx = q_values.argmax(dim=-1).item()
