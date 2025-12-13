@@ -124,23 +124,21 @@ class MonteCarloAgent:
                 print(f"Error creating CSV file: {e}")
 
     def get_state(self, game):
-        # 1. Board Channel (12 x 34)
-        # Game grid is list of lists of colors. Convert to 1s and 0s.
-        board = np.zeros((34, 12), dtype=np.float32)
-        # Grid is 24 high, but we want 10 buffer.
-        # game.grid.grid is 24 rows.
-        # We need to pad top with 10 empty rows.
-        
-        # Actually, let's just use the visible grid + buffer if available?
-        # The prompt said "game board + 10 blocks above".
-        # game.grid.grid is 24x12.
-        # Let's assume the input is 34x12.
-        # Rows 0-9 are buffer (empty for now), 10-33 are game grid.
-        
-        for y in range(24):
-            for x in range(12):
-                if game.grid.grid[y][x] != (0, 0, 0):
-                    board[y + 10][x] = 1.0
+        buffer_rows = 10
+
+        # 1. Board Channel (locked blocks only)
+        # Cache the locked board until the grid changes (piece locks / line clears / reset).
+        board_key = (id(game.grid), getattr(game, "pieces_locked", 0), getattr(game, "lines_cleared_total", 0))
+        if getattr(self, "_cached_board_key", None) != board_key:
+            board = np.zeros((34, 12), dtype=np.float32)
+            for y in range(24):
+                for x in range(12):
+                    if game.grid.grid[y][x] != (0, 0, 0):
+                        board[y + buffer_rows][x] = 1.0
+            self._cached_board_key = board_key
+            self._cached_board = board
+        else:
+            board = self._cached_board
                     
         # 2. Piece Channel
         piece_grid = np.zeros((34, 12), dtype=np.float32)
@@ -149,7 +147,7 @@ class MonteCarloAgent:
                 # Piece y is relative to board top (0).
                 # So in our 34-height grid, it is y + 10.
                 # Note: piece.y can be negative (spawning).
-                py = game.current_piece.y + y + 10
+                py = game.current_piece.y + y + buffer_rows
                 px = game.current_piece.x + x
                 if 0 <= py < 34 and 0 <= px < 12:
                     piece_grid[py][px] = 1.0
@@ -159,7 +157,7 @@ class MonteCarloAgent:
         ghost = game.get_ghost_piece()
         if ghost:
             for x, y in ghost.shape:
-                py = ghost.y + y + 10
+                py = ghost.y + y + buffer_rows
                 px = ghost.x + x
                 if 0 <= py < 34 and 0 <= px < 12:
                     ghost_grid[py][px] = 1.0
@@ -168,18 +166,20 @@ class MonteCarloAgent:
         grid_input = np.stack([board, piece_grid, ghost_grid]) # (3, 34, 12)
         
         # 4. Next Piece (Flattened 10x10)
-        # We need to represent the next piece shape.
-        # Let's center it in a 10x10 grid.
-        next_piece_vec = np.zeros(100, dtype=np.float32)
-        if game.next_piece:
-            # Center is 5, 5
-            for x, y in game.next_piece.shape:
-                # Normalize shape coordinates? They are usually small (0-4).
-                # Let's just place them at offset 5,5
-                nx = x + 5
-                ny = y + 5
-                if 0 <= nx < 10 and 0 <= ny < 10:
-                    next_piece_vec[ny * 10 + nx] = 1.0
+        # Cache until next_piece changes (only updates when a piece locks/spawns or on reset).
+        next_piece_id = id(getattr(game, "next_piece", None))
+        if getattr(self, "_cached_next_piece_id", None) != next_piece_id:
+            next_piece_vec = np.zeros(100, dtype=np.float32)
+            if game.next_piece:
+                for x, y in game.next_piece.shape:
+                    nx = x + 5
+                    ny = y + 5
+                    if 0 <= nx < 10 and 0 <= ny < 10:
+                        next_piece_vec[ny * 10 + nx] = 1.0
+            self._cached_next_piece_id = next_piece_id
+            self._cached_next_piece_vec = next_piece_vec
+        else:
+            next_piece_vec = self._cached_next_piece_vec
                     
         return grid_input, next_piece_vec
 
