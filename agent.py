@@ -251,8 +251,8 @@ class MonteCarloAgent:
             # Bad placement: one of the conditions failed
             reward -= 20
 
-        if placement_height_delta < 1:
-            reward += 0
+        if placement_height_delta < 2:
+            reward += 20
 
         # This rewards sliding under overhangs or clearing lines with holes beneath and punishes creating holes
         if net_holes != 0:
