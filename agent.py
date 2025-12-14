@@ -326,7 +326,7 @@ class MonteCarloAgent:
             # Bad placement: one of the conditions failed
             reward -= 20
         
-        # This rewards placements that do not raise the lowest column too much
+        # This rewards placements that do not place much higher than the lowest column
         placement_height_delta = max(0, lowest_block_height_after - lowest_col_height_before)
         if placement_height_delta < 2:
             reward += 10
