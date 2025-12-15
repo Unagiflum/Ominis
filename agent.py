@@ -329,7 +329,7 @@ class MonteCarloAgent:
         # This rewards placements that do not place much higher than the lowest column
         placement_height_delta = max(0, lowest_block_height_after - lowest_col_height_before)
         if placement_height_delta < 2:
-            reward += 25
+            reward += 10
 
         # This rewards sliding under overhangs or clearing lines with holes beneath and punishes creating holes
         if net_holes != 0:
