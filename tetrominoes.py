@@ -151,7 +151,7 @@ def get_allowed_shapes(include_pentominoes=True, include_tetrominoes=False, incl
                 # Triomino (size 3): 2^3 = 8 per shape. (2 shapes: I, L). Total 16. Ratio 16:2 = 8:1. Correct ("8 triominoes per 1-omino").
                 # Tetromino (size 4): 2^4 = 16 per shape. (7 shapes). Total 16*7 = 112. ratio 112:2 = 56:1. Correct ("56 tetrominoes").
                 
-                weight = max(1, int(math.ceil(2.0 ** count))) # can use float as the base, higher means more weight on larger shapes
+                weight = max(1, int(math.ceil(1.0 ** count))) # can use float as the base, higher means more weight on larger shapes
                 allowed.extend([shape] * weight)
             else:
                 allowed.append(shape)
