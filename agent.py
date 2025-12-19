@@ -293,47 +293,22 @@ class MonteCarloAgent:
         """Encode (lateral_idx, rotation_idx) to joint action index."""
         return lateral_idx * 3 + rotation_idx
 
-    def calculate_reward(self, lines_cleared, game_over, max_height_before, max_height_after,
-                         lowest_col_height_before, lowest_block_height_after, net_holes):
+    def calculate_reward(self, lines_cleared, hole_delta, jaggedness_delta):
         """
         Calculate reward for a piece placement using post-clear board state.
-        
+
         Args:
             lines_cleared: Lines cleared by the placement
-            game_over: Whether the game ended
-            max_height_before: Max stack height before the placement
-            max_height_after: Max stack height after the placement (post-clear)
-            lowest_col_height_before: Height of the lowest column before the placement
-            lowest_block_height_after: Height of the lowest surviving block of the placed piece (post-clear, 0 if none remain)
-            net_holes: holes_after - holes_before (post-clear vs pre-lock)
-        
+            hole_delta: holes_after - holes_before (post-clear vs pre-lock)
+            jaggedness_delta: jaggedness_after - jaggedness_before (post-clear vs pre-lock)
+
         Returns:
-            Total reward for this piece placement
+            Total reward for this piece placement (game over penalty applied elsewhere)
         """
-        reward = 0
-
-        if lines_cleared > 0:
-            reward += 1.20 #* (lines_cleared**0.5)
-
-        if game_over:
-            reward -= 2.00            
-        
-        good_move = (max_height_after <= max_height_before and net_holes <= 0)
-        if good_move:
-            reward += 0.40
-        else:
-            # Bad placement: one of the conditions failed
-            reward -= 0.20
-        
-        # This rewards placements that do not place much higher than the lowest column
-        placement_height_delta = max(0, lowest_block_height_after - lowest_col_height_before)
-        if placement_height_delta < 2:
-            reward += 0.05
-
-        # This rewards sliding under overhangs or clearing lines with holes beneath and punishes creating holes
-        if net_holes != 0:
-            reward += 0.20 * (-net_holes)
-
+        reward = 0.0
+        reward += 1.0 * lines_cleared
+        reward -= 0.1 * hole_delta
+        reward -= 0.05 * jaggedness_delta
         return reward
 
     def add_trajectory_with_done(self, trajectory, final_reward):

@@ -89,7 +89,7 @@ class Game:
         self.agent = None
         self.training_step_count = 0
         self.current_trajectory = [] # Buffer for current piece's moves
-        self.start_stats = (0, 0) # (Height, Holes) at start of piece
+        self.start_stats = (0, 0, 0) # (Height, Holes, Jaggedness) at start of piece
         self.last_save_time = 0 # Track last auto-save time
         
         # Pending reward application for visual-mode line clear animation
@@ -173,22 +173,37 @@ class Game:
         # Drop 50ms per level starting at 17, but never below 50ms
         return max(50, 250 - 50 * (self.level - 16))
 
-    def get_grid_stats(self):
-        """Returns (max_height, holes) for the current grid."""
-        max_height = 0
-        for y in range(self.grid_height):
-            if any(c != (0,0,0) for c in self.grid.grid[y]):
-                max_height = self.grid_height - y
-                break
-        
+    def _analyze_grid(self, grid_cells):
+        """Return (max_height, holes, jaggedness) for a grid cell matrix."""
+        heights = [0] * self.grid_width
         holes = 0
+
         for x in range(self.grid_width):
-            for y in range(1, self.grid_height):
-                # Hole definition: Empty space immediately below a block
-                # We check if current is empty and above is NOT empty
-                if self.grid.grid[y][x] == (0,0,0) and self.grid.grid[y-1][x] != (0,0,0):
+            top_y = None
+            for y in range(self.grid_height):
+                if grid_cells[y][x] != (0, 0, 0):
+                    top_y = y
+                    heights[x] = self.grid_height - y
+                    break
+
+            if top_y is None:
+                continue
+
+            # Holes are all empty cells below the top filled cell in a column.
+            for y in range(top_y + 1, self.grid_height):
+                if grid_cells[y][x] == (0, 0, 0):
                     holes += 1
-        return max_height, holes
+
+        jaggedness = 0
+        for x in range(self.grid_width - 1):
+            jaggedness += abs(heights[x] - heights[x + 1])
+
+        max_height = max(heights) if heights else 0
+        return max_height, holes, jaggedness
+
+    def get_grid_stats(self):
+        """Returns (max_height, holes, jaggedness) for the current grid."""
+        return self._analyze_grid(self.grid.grid)
     
     def get_lowest_column_height(self):
         """Returns the height of the lowest column (lowest max height across all columns).
@@ -211,8 +226,8 @@ class Game:
 
     def get_post_clear_grid_stats(self, clearing_lines):
         """
-        Simulates line clearing on a temporary grid to calculate post-clear stats (height, holes).
-        Returns: (simulated_height, simulated_holes)
+        Simulates line clearing on a temporary grid to calculate post-clear stats.
+        Returns: (simulated_height, simulated_holes, simulated_jaggedness)
         """
         if not clearing_lines:
             return self.get_grid_stats()
@@ -229,20 +244,7 @@ class Game:
             new_grid.append([(0, 0, 0) for _ in range(self.grid_width)])
         new_grid.extend(kept_rows)
         
-        # Calculate stats on this synthetic grid
-        max_height = 0
-        for y in range(self.grid_height):
-            if any(c != (0,0,0) for c in new_grid[y]):
-                max_height = self.grid_height - y
-                break
-        
-        holes = 0
-        for x in range(self.grid_width):
-            for y in range(1, self.grid_height):
-                 if new_grid[y][x] == (0,0,0) and new_grid[y-1][x] != (0,0,0):
-                    holes += 1
-                    
-        return max_height, holes
+        return self._analyze_grid(new_grid)
 
     def get_piece_lowest_height_after_clear(self, piece, clearing_lines):
         """
@@ -802,6 +804,9 @@ class Game:
         if not self.agent or not trajectory:
             return
 
+        if is_game_over:
+            reward_value -= 2.0
+
         self.agent.add_trajectory_with_done(trajectory, reward_value)
         self.agent.record_training_stats(len(trajectory), lines_cleared, is_game_over)
 
@@ -925,8 +930,7 @@ class Game:
         piece_before = self.current_piece
         lines_before = self.lines_cleared_total
         # Capture stats locally to ensure fresh data for reward calculation
-        height_before, holes_before_step = self.get_grid_stats()
-        lowest_col_height_before = self.get_lowest_column_height()
+        _, holes_before_step, jaggedness_before = self.get_grid_stats()
         
         # Reset clearing lines flag for Headless detection
         self.clearing_lines = []
@@ -979,51 +983,51 @@ class Game:
                         clearing_lines.append(y)
 
             # Post-clear stats on simulated grid
-            max_height_after, holes_after = self.get_post_clear_grid_stats(clearing_lines)
-            net_holes = holes_after - holes_before_step
-
-            # Lowest surviving block height after clears
-            lowest_block_height_after = self.get_piece_lowest_height_after_clear(piece_before, clearing_lines)
+            _, holes_after, jaggedness_after = self.get_post_clear_grid_stats(clearing_lines)
+            hole_delta = holes_after - holes_before_step
+            jaggedness_delta = jaggedness_after - jaggedness_before
 
             is_game_over = (self.state == "GAMEOVER")
             
             # Calculate reward for this placement
             reward = self.agent.calculate_reward(
                 lines_cleared,
-                is_game_over,
-                height_before,
-                max_height_after,
-                lowest_col_height_before,
-                lowest_block_height_after,
-                net_holes
+                hole_delta,
+                jaggedness_delta
             )
 
             # Apply reward to this piece's trajectory
             if self.state == "ANIMATING_CLEAR":
                 # Store trajectory with reward for after animation completes
                 self.pending_reward_event = (trajectory, reward, lines_cleared, is_game_over)
+            elif is_headless_clearing:
+                pending_reward = reward
             else:
                 self.apply_trajectory_reward(trajectory, reward, lines_cleared, is_game_over)
-                
-                # HEADLESS DEFERRED ACTIONS
-                # If we had deferred line clearing, execute it now
-                if is_headless_clearing:
-                    self.apply_line_clears()
-                    # Reset clearing list
-                    self.clearing_lines = []
-                    
-                    self.current_piece = self.next_piece
-                    self.start_stats = self.get_grid_stats() # Update for new piece
-                    self.next_piece = self.spawn_piece()
-                    
-                    # Check collision for new piece
-                    if self.grid.check_collision(self.current_piece):
-                        self.handle_game_over()
-                        if self.state == "GAMEOVER":
-                             done = True
-                
-                if done:
-                    self.finish_training_round()
+
+            # HEADLESS DEFERRED ACTIONS
+            # If we had deferred line clearing, execute it now
+            if is_headless_clearing:
+                self.apply_line_clears()
+                # Reset clearing list
+                self.clearing_lines = []
+
+                self.current_piece = self.next_piece
+                self.start_stats = self.get_grid_stats() # Update for new piece
+                self.next_piece = self.spawn_piece()
+
+                # Check collision for new piece
+                if self.grid.check_collision(self.current_piece):
+                    self.handle_game_over()
+
+                is_game_over = (self.state == "GAMEOVER")
+                if is_game_over:
+                    done = True
+
+                self.apply_trajectory_reward(trajectory, pending_reward, lines_cleared, is_game_over)
+
+            if done:
+                self.finish_training_round()
         
         # Auto-save every 5 minutes
         current_time = pygame.time.get_ticks()
