@@ -306,9 +306,21 @@ class MonteCarloAgent:
             Total reward for this piece placement (game over penalty applied elsewhere)
         """
         reward = 0.0
+
         reward += 1.0 * lines_cleared
-        reward -= 0.1 * hole_delta
-        reward -= 0.05 * jaggedness_delta
+
+        if hole_delta < 0:
+            reward -= 0.25 * hole_delta
+        else:
+            if hole_delta > 0:
+                reward -= 0.5 * hole_delta
+
+        if jaggedness_delta < 0:
+            reward -= 0.1 * jaggedness_delta
+        else:
+            if jaggedness_delta > 0:
+                reward -= 0.2 * jaggedness_delta
+
         return reward
 
     def add_trajectory_with_done(self, trajectory, final_reward):

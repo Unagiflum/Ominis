@@ -23,6 +23,14 @@ class UI:
         t = time.time() - self.start_time
         return (math.sin(t * speed) + 1) / 2 # 0.0 to 1.0
 
+    def _truncate_text(self, text, max_width, font):
+        if font.size(text)[0] <= max_width:
+            return text
+        trimmed = text
+        while trimmed and font.size(trimmed + "...")[0] > max_width:
+            trimmed = trimmed[:-1]
+        return (trimmed + "...") if trimmed else "..."
+
     def draw_background(self):
         # Draw scrolling grid
         t = time.time() - self.start_time
@@ -461,6 +469,62 @@ class UI:
         
         return rect
 
+
+    def draw_dropdown(self, x, y, width, height, label, options, selected_idx=None, is_open=False, mouse_pos=None, font=None, option_width=None, list_options=None):
+        if font is None:
+            font = self.font
+        rect = pygame.Rect(x, y, width, height)
+
+        # Base box
+        pygame.draw.rect(self.screen, self.bg_color, rect, border_radius=10)
+        color = self.text_color
+        if mouse_pos and rect.collidepoint(mouse_pos):
+            color = self.accent_color
+        pygame.draw.rect(self.screen, color, rect, 2, border_radius=10)
+
+        display_text = label
+        if selected_idx is not None and 0 <= selected_idx < len(options):
+            display_text = options[selected_idx]
+        display_text = self._truncate_text(display_text, width - 26, font)
+        text = font.render(display_text, True, color)
+        self.screen.blit(text, (x + 8, y + height // 2 - text.get_height() // 2))
+
+        # Dropdown arrow
+        arrow_x = x + width - 16
+        arrow_y = y + height // 2 - 3
+        pygame.draw.polygon(self.screen, color, [
+            (arrow_x - 6, arrow_y),
+            (arrow_x + 6, arrow_y),
+            (arrow_x, arrow_y + 6)
+        ])
+
+        option_rects = []
+        list_items = list_options if list_options is not None else options
+        list_width = option_width if option_width is not None else width
+        if is_open:
+            if not list_items:
+                empty_rect = pygame.Rect(x, y + height, list_width, height)
+                pygame.draw.rect(self.screen, self.bg_color, empty_rect, border_radius=8)
+                pygame.draw.rect(self.screen, (100, 100, 100), empty_rect, 2, border_radius=8)
+                empty_text = font.render("No models found", True, (120, 120, 120))
+                self.screen.blit(empty_text, (empty_rect.x + 8, empty_rect.y + height // 2 - empty_text.get_height() // 2))
+            else:
+                for idx, option in enumerate(list_items):
+                    opt_rect = pygame.Rect(x, y + height + idx * height, list_width, height)
+                    pygame.draw.rect(self.screen, self.bg_color, opt_rect, border_radius=8)
+                    opt_color = self.text_color
+                    if mouse_pos and opt_rect.collidepoint(mouse_pos):
+                        opt_color = self.accent_color
+                        s = pygame.Surface((list_width, height))
+                        s.set_alpha(50)
+                        s.fill(opt_color)
+                        self.screen.blit(s, (opt_rect.x, opt_rect.y))
+                    pygame.draw.rect(self.screen, opt_color, opt_rect, 2, border_radius=8)
+                    opt_surf = font.render(option, True, opt_color)
+                    self.screen.blit(opt_surf, (opt_rect.x + 8, opt_rect.y + height // 2 - opt_surf.get_height() // 2))
+                    option_rects.append(opt_rect)
+
+        return rect, option_rects
 
     def draw_slider(self, x, y, width, value, label, mouse_pos=None, font=None, active=True):
         if font is None:

@@ -60,6 +60,12 @@ class Game:
         self.slider_rect = None
         self.train_slider_rect = None
         self.dragging_slider = False
+        self.watch_dropdown_rect = None
+        self.watch_play_rect = None
+        self.watch_option_rects = []
+        self.watch_dropdown_open = False
+        self.watch_models = []
+        self.watch_model_selected = None
         
         # Architecture UI
         self.epsilon_bump_value = 0.2
@@ -132,7 +138,7 @@ class Game:
             except Exception as e:
                 print(f"Failed to load settings: {e}")
 
-    def create_agent(self):
+    def create_agent(self, params_override=None):
         """Lazily import and build the AI agent so the game can start without PyTorch installed."""
         try:
             from agent import MonteCarloAgent
@@ -144,10 +150,74 @@ class Game:
             return None
 
         try:
-            return MonteCarloAgent(self.train_params)
+            params = params_override if params_override is not None else self.train_params
+            return MonteCarloAgent(params)
         except Exception as e:
             print(f"Failed to initialize AI agent: {e}")
             return None
+
+    def refresh_watch_models(self):
+        import os
+        models_dir = "models"
+        if not os.path.isdir(models_dir):
+            self.watch_models = []
+        else:
+            files = [f for f in os.listdir(models_dir) if f.lower().endswith(".pth")]
+            files.sort()
+            self.watch_models = files
+        if self.watch_model_selected and self.watch_model_selected not in self.watch_models:
+            self.watch_model_selected = None
+
+    def _parse_model_arch(self, model_file):
+        import os
+        base = os.path.splitext(os.path.basename(model_file))[0]
+        parts = base.split("-")
+        if len(parts) < 3:
+            return None
+        try:
+            size = int(parts[-2])
+            count = int(parts[-1])
+        except ValueError:
+            return None
+        if size not in self.hl_sizes:
+            return None
+        count = max(1, min(4, count))
+        return self.hl_sizes.index(size), count
+
+    def build_watch_agent(self, model_file):
+        import os
+        params = dict(self.train_params)
+        arch = self._parse_model_arch(model_file)
+        if arch:
+            params['hl_size_idx'], params['hl_count'] = arch
+        agent = self.create_agent(params_override=params)
+        if not agent:
+            return None
+        model_path = os.path.join("models", model_file)
+        if not os.path.exists(model_path):
+            print(f"Model not found: {model_path}")
+            return None
+        try:
+            agent.load(model_path)
+            print(f"Loaded model {model_path} for watching.")
+        except Exception as e:
+            print(f"Failed to load model {model_path}: {e}")
+            return None
+        return agent
+
+    def start_watch_ai(self):
+        self.refresh_watch_models()
+        if not self.watch_model_selected:
+            return
+        self.watch_dropdown_open = False
+        agent = self.build_watch_agent(self.watch_model_selected)
+        if agent:
+            self.agent = agent
+            self.audio.stop()
+            self.reset(start_music=True)
+            self.state = "WATCH_AI"
+        else:
+            self.agent = None
 
     def save_settings(self):
         import json
@@ -304,7 +374,7 @@ class Game:
         p.y = -max_y - 1
         return p
 
-    def reset(self):
+    def reset(self, start_music=True):
         self.grid = Grid(self.grid_width, self.grid_height, self.cell_size)
         self.score = 0
         self.level = 1
@@ -349,7 +419,7 @@ class Game:
         # Only start music if not in headless training
         if self.state == "TRAINING" and not self.train_params['visual_mode']:
             pass
-        else:
+        elif start_music:
             self.audio.start()
         
         # Short games: Initialize with random rows filled, each 75% randomly filled with at least 1 missing
@@ -468,25 +538,12 @@ class Game:
                                 self.audio.stop()
                         elif self.btn_watch_rect and self.btn_watch_rect.collidepoint(mouse_pos):
                             if self.include_pentominoes or self.include_tetrominoes or self.include_ominis:
-                                agent = self.create_agent()
-                                if agent:
-                                    self.reset()
-                                    # Initialize agent for watching
-                                    # We need some default params for the agent structure
-                                    # Let's use the current train_params
-                                    self.agent = agent
-                                    import os
-                                    model_file = self.get_model_filename()
-                                    if os.path.exists(model_file):
-                                        try:
-                                            self.agent.load(model_file)
-                                            print(f"Loaded model {model_file} for watching.")
-                                        except Exception as e:
-                                            print(f"Failed to load model {model_file}: {e}")
-                                    self.state = "WATCH_AI"
-                                else:
-                                    self.agent = None
-                                    print("Watch AI requires the AI dependencies; staying in the menu.")
+                                self.reset(start_music=False)
+                                self.state = "WATCH_AI"
+                                self.agent = None
+                                self.watch_model_selected = None
+                                self.watch_dropdown_open = False
+                                self.refresh_watch_models()
 
             elif self.state == "TRAIN_MENU":
                 if event.type == pygame.MOUSEBUTTONDOWN:
@@ -561,12 +618,38 @@ class Game:
             elif self.state == "WATCH_AI" or (self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI") or (self.state == "GAMEOVER" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI"):
                  if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
-                        if self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
+                        mouse_pos = event.pos
+                        dropdown_handled = False
+                        if self.watch_dropdown_open:
+                            for rect, model_name in self.watch_option_rects:
+                                if rect.collidepoint(mouse_pos):
+                                    self.watch_model_selected = model_name
+                                    self.watch_dropdown_open = False
+                                    dropdown_handled = True
+                                    break
+                            if not dropdown_handled:
+                                if self.watch_dropdown_rect and self.watch_dropdown_rect.collidepoint(mouse_pos):
+                                    self.watch_dropdown_open = False
+                                else:
+                                    self.watch_dropdown_open = False
+                                dropdown_handled = True
+                        if dropdown_handled:
+                            continue
+
+                        if self.btn_back_rect and self.btn_back_rect.collidepoint(mouse_pos):
                             self.state = "MENU"
                             self.audio.stop()
-                        elif self.slider_rect and self.slider_rect.collidepoint(event.pos):
+                            self.watch_dropdown_open = False
+                        elif self.watch_play_rect and self.watch_play_rect.collidepoint(mouse_pos):
+                            if self.watch_model_selected:
+                                self.start_watch_ai()
+                        elif self.watch_dropdown_rect and self.watch_dropdown_rect.collidepoint(mouse_pos):
+                            self.watch_dropdown_open = not self.watch_dropdown_open
+                            if self.watch_dropdown_open:
+                                self.refresh_watch_models()
+                        elif self.slider_rect and self.slider_rect.collidepoint(mouse_pos):
                             self.dragging_slider = True
-                            self.update_volume(event.pos[0])
+                            self.update_volume(mouse_pos[0])
                  elif event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 1:
                         self.dragging_slider = False
@@ -796,6 +879,8 @@ class Game:
 
 
     def handle_game_over(self):
+        if self.state in ["WATCH_AI", "PLAYING"]:
+            self.last_state = self.state
         self.state = "GAMEOVER"
         self.audio.stop()
 
@@ -1183,6 +1268,8 @@ class Game:
                 game_over_after_spawn = False
                 if self.grid.check_collision(self.current_piece):
                     game_over_after_spawn = True
+                    if self.state in ["WATCH_AI", "PLAYING"]:
+                        self.last_state = self.state
                     self.state = "GAMEOVER"
                     self.audio.stop()
                 
@@ -1275,6 +1362,7 @@ class Game:
             # Left Pane Layout
             left_pane_x = padding
             current_y = padding
+            watch_ui = self.state == "WATCH_AI" or (self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI") or (self.state == "GAMEOVER" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI")
             
             # Scoreboard (Height 150)
             self.ui.draw_score(self.score, self.level, self.lines_cleared_total, left_pane_x, current_y)
@@ -1283,6 +1371,35 @@ class Game:
             # Preview (Height 210)
             self.ui.draw_preview(self.next_piece, left_pane_x, current_y, self.cell_size)
             current_y += 210 + padding
+
+            watch_dropdown_layout = None
+            if watch_ui:
+                dropdown_height = 40
+                dropdown_width = 140
+                play_width = 60
+                gap = 10
+                import os
+                options = [os.path.splitext(name)[0] for name in self.watch_models]
+                list_options = list(self.watch_models)
+                option_width = None
+                if self.watch_dropdown_open:
+                    text_font = self.ui.small_font
+                    max_text_width = text_font.size("No models found")[0]
+                    for option in list_options:
+                        max_text_width = max(max_text_width, text_font.size(option)[0])
+                    needed_width = max_text_width + 16
+                    max_option_width = self.screen_width - left_pane_x - padding
+                    option_width = max(dropdown_width, min(needed_width, max_option_width))
+                selected_idx = None
+                if self.watch_model_selected in self.watch_models:
+                    selected_idx = self.watch_models.index(self.watch_model_selected)
+                watch_dropdown_layout = (left_pane_x, current_y, dropdown_width, dropdown_height, play_width, gap, options, list_options, option_width, selected_idx)
+                current_y += dropdown_height + padding
+            else:
+                self.watch_dropdown_rect = None
+                self.watch_play_rect = None
+                self.watch_option_rects = []
+                self.watch_dropdown_open = False
             
             # Instructions (Variable Height)
             # Calculate height: lines * 25 + 20 + 20
@@ -1290,9 +1407,7 @@ class Game:
             # Watch: 2 lines -> 50 + 40 = 90
             # Add extra padding to be safe against overlap
             # Determine mode for instructions - check if we came from WATCH_AI when paused
-            instruction_mode = self.state
-            if self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI":
-                instruction_mode = "WATCH_AI"
+            instruction_mode = "WATCH_AI" if watch_ui else self.state
             
             inst_height = 180 if instruction_mode != "WATCH_AI" else 130
             self.ui.draw_instructions(left_pane_x, current_y, mode=instruction_mode)
@@ -1347,6 +1462,28 @@ class Game:
                 
             if self.state == "PAUSED":
                 self.ui.draw_pause_screen(grid_rect_x, grid_rect_y, grid_rect_w, grid_rect_h)
+
+            if watch_dropdown_layout:
+                (drop_x, drop_y, dropdown_width, dropdown_height, play_width, gap,
+                 options, list_options, option_width, selected_idx) = watch_dropdown_layout
+                self.watch_dropdown_rect, option_rects = self.ui.draw_dropdown(
+                    drop_x,
+                    drop_y,
+                    dropdown_width,
+                    dropdown_height,
+                    "Select model",
+                    options,
+                    selected_idx,
+                    self.watch_dropdown_open,
+                    mouse_pos,
+                    font=self.ui.small_font,
+                    option_width=option_width,
+                    list_options=list_options
+                )
+                self.watch_option_rects = list(zip(option_rects, self.watch_models))
+                play_x = drop_x + dropdown_width + gap
+                play_active = self.watch_model_selected in self.watch_models
+                self.watch_play_rect = self.ui.draw_button(play_x, drop_y, play_width, dropdown_height, "PLAY", play_active, mouse_pos, font=self.ui.small_font)
         
         pygame.display.flip()
 
