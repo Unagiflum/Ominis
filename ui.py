@@ -331,7 +331,7 @@ class UI:
         # Move Discount (Gamma) (0.1 - 1.0)
         gamma = params.get('gamma', 0.70)
         gamma = max(0.1, min(1.0, gamma))
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (gamma - 0.1) / 0.9, f"Move Discount: {gamma:.2f}", mouse_pos, self.small_font, active=not is_training)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (gamma - 0.1) / 0.9, f"Gamma (Discount): {gamma:.2f}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['gamma'] = s_rect
         sy += 45
 
@@ -343,7 +343,7 @@ class UI:
         
         # Short Game Length (how many pieces before auto-restart in short games mode)
         short_game_length = max(1, min(20, params.get('pieces_tracked', 10)))
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (short_game_length - 1) / 19.0, f"Short Game Length: {short_game_length}", mouse_pos, self.small_font, active=not is_training)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (short_game_length - 1) / 19.0, f"Piece History: {short_game_length}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['pieces_tracked'] = s_rect
         sy += 25
         
