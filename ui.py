@@ -248,7 +248,7 @@ class UI:
                 
             current_y += line_height
 
-    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False, volume=0.5, epsilon_bump_val=0.2):
+    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False, volume=0.5):
 
         self.draw_background()
         
@@ -287,11 +287,7 @@ class UI:
         s_rect = self.draw_slider(slider_x, sy, slider_width, (params['hl_count'] - 1) / 3.0, f"Hidden Layers: {params['hl_count']}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
         if not is_training: slider_rects['hl_count'] = s_rect
         
-        # Epsilon Reset Button
-        # Moved up (sy + 30 instead of 45) and smaller height (25 instead of 30)
-        btn_eps_reset_rect = self.draw_button(slider_x, sy + 30, slider_width, 25, f"Eps {epsilon_bump_val:.2f}", not is_training, mouse_pos, font=self.small_font)
-
-
+        dropdown_rect = pygame.Rect(slider_x, sy + 30, slider_width, 25)
 
         
         current_y += arch_height + 20
@@ -376,7 +372,7 @@ class UI:
         
         self.draw_grid(grid, offset_x, offset_y)
         
-        return btn_back_rect, chk_rect, btn_start_rect, slider_rects, vol_slider_rect, short_games_chk_rect, btn_eps_reset_rect
+        return btn_back_rect, chk_rect, btn_start_rect, slider_rects, vol_slider_rect, short_games_chk_rect, dropdown_rect
 
 
     def draw_group_box(self, x, y, width, height, title):

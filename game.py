@@ -67,10 +67,16 @@ class Game:
         self.watch_dropdown_open = False
         self.watch_models = []
         self.watch_model_selected = None
+
+        self.train_dropdown_rect = None
+        self.train_option_rects = []
+        self.train_dropdown_open = False
+        self.train_models = []
+        self.train_model_selected = None
+        self.train_model_source = None
+        self.train_model_arch = None
         
         # Architecture UI
-        self.epsilon_bump_value = 0.2
-        self.btn_eps_reset_rect = None
         self.hl_sizes = [128, 256, 512, 1024, 2048]
 
         # Training Parameters
@@ -91,6 +97,7 @@ class Game:
         self.train_slider_rects = {}
         self.active_slider = None
         self.active_slider_handle = None
+        self.epsilon_override_pending = False
 
         # Input handling state (DAS - Delayed Auto Shift)
         self.das_delay = 200 # ms before repeat starts
@@ -140,24 +147,8 @@ class Game:
             try:
                 with open("settings.json", "r") as f:
                     saved_params = json.load(f)
-                    # Update params
-                    for k, v in saved_params.items():
-                        if k in self.train_params:
-                            self.train_params[k] = v
-                # Clamp epsilon range to UI-supported bounds
-                min_percent = int(self.train_params.get('epsilon_min_percent', 5))
-                current_percent = int(self.train_params.get('epsilon_current_percent', 20))
-                min_percent = max(0, min(20, min_percent))
-                current_percent = max(0, min(20, current_percent))
-                if min_percent > current_percent:
-                    min_percent, current_percent = current_percent, min_percent
-                self.train_params['epsilon_min_percent'] = min_percent
-                self.train_params['epsilon_current_percent'] = current_percent
-                # Clamp learning rate to supported slider range
-                self.train_params['learning_rate'] = max(0.0001, min(0.005, self.train_params.get('learning_rate', 0.001)))
-                self.train_params['gamma'] = 1.0
-                self.train_params['big_piece_weight'] = max(1, min(4, int(self.train_params.get('big_piece_weight', 1))))
-                print("Loaded settings from settings.json")
+                if self._apply_loaded_train_params(saved_params):
+                    print("Loaded settings from settings.json")
             except Exception as e:
                 print(f"Failed to load settings: {e}")
 
@@ -191,6 +182,94 @@ class Game:
         if self.watch_model_selected and self.watch_model_selected not in self.watch_models:
             self.watch_model_selected = None
 
+    def refresh_train_models(self):
+        import os
+        models_dir = "models"
+        if not os.path.isdir(models_dir):
+            self.train_models = []
+        else:
+            files = [f for f in os.listdir(models_dir) if f.lower().endswith(".pth")]
+            files.sort()
+            self.train_models = files
+        if self.train_model_selected and self.train_model_selected not in self.train_models:
+            self.train_model_selected = None
+            self.train_model_source = None
+            self.train_model_arch = None
+
+    def _load_model_checkpoint(self, model_path):
+        try:
+            import torch
+        except ImportError as e:
+            print(f"AI features unavailable (missing dependency): {e}")
+            return None
+        except Exception as e:
+            print(f"Failed to import torch: {e}")
+            return None
+        try:
+            return torch.load(model_path, map_location="cpu")
+        except Exception as e:
+            print(f"Failed to load model {model_path}: {e}")
+            return None
+
+    def _apply_loaded_train_params(self, loaded_params):
+        if not isinstance(loaded_params, dict):
+            return False
+        for k, v in loaded_params.items():
+            if k in self.train_params:
+                self.train_params[k] = v
+
+        self.train_params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, int(self.train_params.get('hl_size_idx', 1))))
+        self.train_params['hl_count'] = max(1, min(4, int(self.train_params.get('hl_count', 2))))
+        self.train_params['learning_rate'] = max(0.0001, min(0.005, float(self.train_params.get('learning_rate', 0.001))))
+        self.train_params['gamma'] = 1.0
+        self.train_params['big_piece_weight'] = max(1, min(4, int(self.train_params.get('big_piece_weight', 1))))
+        self.train_params['pieces_tracked'] = max(1, min(20, int(self.train_params.get('pieces_tracked', 10))))
+        self._apply_piece_size_range(
+            self.train_params.get('min_size', 1),
+            self.train_params.get('max_size', 5)
+        )
+        self._apply_epsilon_range(
+            self.train_params.get('epsilon_min_percent', 5),
+            self.train_params.get('epsilon_current_percent', 20),
+            apply_current=False
+        )
+        return True
+
+    def select_train_model(self, model_name):
+        import os
+        self.train_model_selected = model_name
+        self.train_model_source = model_name
+        model_path = os.path.join("models", model_name)
+        checkpoint = self._load_model_checkpoint(model_path)
+        if checkpoint:
+            loaded_params = checkpoint.get('params')
+            if not self._apply_loaded_train_params(loaded_params):
+                arch = self._parse_model_arch(model_name)
+                if arch:
+                    self.train_params['hl_size_idx'], self.train_params['hl_count'] = arch
+                    self.train_params['hl_count'] = max(1, min(4, int(self.train_params['hl_count'])))
+        self.train_model_arch = (
+            int(self.train_params.get('hl_size_idx', 1)),
+            int(self.train_params.get('hl_count', 2))
+        )
+        self.epsilon_override_pending = False
+
+    def initialize_train_menu(self):
+        import os
+        self.load_settings()
+        self.refresh_train_models()
+        self.train_dropdown_open = False
+        self.train_option_rects = []
+        self.train_model_selected = None
+        self.train_model_source = None
+        self.train_model_arch = None
+        self.epsilon_override_pending = False
+
+        model_path = self.get_model_filename()
+        if os.path.exists(model_path):
+            model_name = os.path.basename(model_path)
+            self.select_train_model(model_name)
+
     def _parse_model_arch(self, model_file):
         import os
         base = os.path.splitext(os.path.basename(model_file))[0]
@@ -206,6 +285,30 @@ class Game:
             return None
         count = max(1, min(4, count))
         return self.hl_sizes.index(size), count
+
+    def _is_standard_model_name(self, model_file):
+        import os
+        base = os.path.splitext(os.path.basename(model_file))[0]
+        if not base.startswith("model-"):
+            return False
+        return self._parse_model_arch(model_file) is not None
+
+    def _get_standard_model_base(self):
+        hl_size_idx = int(self.train_params.get('hl_size_idx', 1))
+        hl_size_idx = max(0, min(len(self.hl_sizes) - 1, hl_size_idx))
+        size = self.hl_sizes[hl_size_idx]
+        count = max(1, min(4, int(self.train_params.get('hl_count', 2))))
+        return f"model-{size}-{count}"
+
+    def _get_train_dropdown_label(self):
+        import os
+        current_arch = (
+            int(self.train_params.get('hl_size_idx', 1)),
+            int(self.train_params.get('hl_count', 2))
+        )
+        if self.train_model_selected and self.train_model_arch == current_arch:
+            return os.path.splitext(self.train_model_selected)[0]
+        return self._get_standard_model_base()
 
     def build_watch_agent(self, model_file):
         import os
@@ -563,8 +666,8 @@ class Game:
                             if self.include_pentominoes or self.include_tetrominoes or self.include_ominis:
                                 self.reset()
                         elif self.btn_train_rect and self.btn_train_rect.collidepoint(mouse_pos):
-                            # Settings are already loaded in __init__
                             self.state = "TRAIN_MENU"
+                            self.initialize_train_menu()
                             # Stop music if visual mode is off (from saved params or default)
                             if not self.train_params['visual_mode']:
                                 self.audio.stop()
@@ -580,6 +683,30 @@ class Game:
             elif self.state == "TRAIN_MENU":
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
+                        mouse_pos = event.pos
+                        dropdown_handled = False
+                        if self.train_dropdown_open:
+                            for rect, model_name in self.train_option_rects:
+                                if rect.collidepoint(mouse_pos):
+                                    self.select_train_model(model_name)
+                                    self.train_dropdown_open = False
+                                    dropdown_handled = True
+                                    break
+                            if not dropdown_handled:
+                                if self.train_dropdown_rect and self.train_dropdown_rect.collidepoint(mouse_pos):
+                                    self.train_dropdown_open = False
+                                else:
+                                    self.train_dropdown_open = False
+                                dropdown_handled = True
+                        if dropdown_handled:
+                            continue
+
+                        if self.train_dropdown_rect and self.train_dropdown_rect.collidepoint(mouse_pos):
+                            self.train_dropdown_open = not self.train_dropdown_open
+                            if self.train_dropdown_open:
+                                self.refresh_train_models()
+                            continue
+
                         if self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
                             self.state = "MENU"
                         elif self.train_chk_rect and self.train_chk_rect.collidepoint(event.pos):
@@ -589,24 +716,64 @@ class Game:
                         elif self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
                             agent = self.create_agent()
                             if agent:
+                                self.train_dropdown_open = False
                                 self.agent = agent
                                 self.reset()
                                 # Try to load existing model
                                 import os
-                                model_file = self.get_model_filename()
-                                if os.path.exists(model_file):
+                                current_arch = (
+                                    int(self.train_params.get('hl_size_idx', 1)),
+                                    int(self.train_params.get('hl_count', 2))
+                                )
+                                selected_arch = self.train_model_arch
+                                selected_path = None
+                                use_selected = False
+                                if self.train_model_source:
+                                    selected_path = os.path.join("models", self.train_model_source)
+                                    use_selected = selected_arch == current_arch and os.path.exists(selected_path)
+
+                                standard_path = self.get_model_filename()
+                                model_file = selected_path if use_selected else standard_path
+
+                                if not use_selected:
+                                    self.train_model_source = os.path.basename(standard_path)
+                                    self.train_model_selected = self.train_model_source
+                                    self.train_model_arch = current_arch
+                                    self.refresh_train_models()
+
+                                if model_file and os.path.exists(model_file):
                                     try:
                                         self.agent.load(model_file)
                                         print(f"Loaded existing model {model_file}.")
+                                        if self.train_model_source and not self._is_standard_model_name(self.train_model_source):
+                                            standard_path = self.get_model_filename()
+                                            try:
+                                                self.agent.save(standard_path)
+                                                self.train_model_source = os.path.basename(standard_path)
+                                                self.train_model_selected = self.train_model_source
+                                                self.train_model_arch = current_arch
+                                                self.refresh_train_models()
+                                                print(f"Saved model to standard filename ({standard_path}).")
+                                            except Exception as e:
+                                                print(f"Failed to save standard model copy {standard_path}: {e}")
                                     except Exception as e:
                                         print(f"Failed to load model {model_file}: {e}")
                                 else:
-                                    print(f"No existing model found for {model_file}, starting fresh.")
+                                    print(f"No existing model found for {standard_path}, starting fresh.")
+                                    if model_file == standard_path:
+                                        try:
+                                            self.agent.save(standard_path)
+                                            self.refresh_train_models()
+                                            print(f"Created new model file ({standard_path}).")
+                                        except Exception as e:
+                                            print(f"Failed to create new model file {standard_path}: {e}")
 
                                 self._apply_epsilon_range(
                                     self.train_params.get('epsilon_min_percent', 5),
-                                    self.train_params.get('epsilon_current_percent', 20)
+                                    self.train_params.get('epsilon_current_percent', 20),
+                                    apply_current=self.epsilon_override_pending
                                 )
+                                self.epsilon_override_pending = False
                                 
                                 self.save_settings()
                                 
@@ -631,17 +798,6 @@ class Game:
                                 else:
                                     self.active_slider_handle = None
                                 self.update_train_slider(event.pos[0])
-                        
-                        # Check Epsilon Reset Button
-                        if self.btn_eps_reset_rect and self.btn_eps_reset_rect.collidepoint(event.pos):
-                            if self.agent:
-                                bump_percent = int(round(self.epsilon_bump_value * 100))
-                                self._apply_epsilon_range(self.train_params.get('epsilon_min_percent', 5), bump_percent)
-                                self.agent.save(self.get_model_filename())
-                                print(f"Epsilon manually reset to {self.epsilon_bump_value} and saved.")
-                            else:
-                                print("Agent not loaded. Start training first.")
-
                         
                         if self.train_slider_rect and self.train_slider_rect.collidepoint(event.pos):
 
@@ -1417,8 +1573,40 @@ class Game:
                 display_grid = Grid(self.grid_width, self.grid_height, self.cell_size)
             
             is_training = (self.state == "TRAINING" or (self.state in ["ANIMATING_CLEAR", "ANIMATING_DROP"] and hasattr(self, 'pre_anim_state') and self.pre_anim_state == "TRAINING"))
-            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.train_slider_rects, self.train_slider_rect, self.short_games_chk_rect, self.btn_eps_reset_rect = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, display_grid, is_training=is_training, volume=self.volume, epsilon_bump_val=self.epsilon_bump_value)
+            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.train_slider_rects, self.train_slider_rect, self.short_games_chk_rect, train_dropdown_anchor = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, display_grid, is_training=is_training, volume=self.volume)
 
+            train_dropdown_layout = None
+            if train_dropdown_anchor:
+                import os
+                padding = 20
+                options = [os.path.splitext(name)[0] for name in self.train_models]
+                list_options = list(self.train_models)
+                option_width = None
+                if self.train_dropdown_open:
+                    text_font = self.ui.small_font
+                    max_text_width = text_font.size("No models found")[0]
+                    for option in list_options:
+                        max_text_width = max(max_text_width, text_font.size(option)[0])
+                    needed_width = max_text_width + 16
+                    max_option_width = self.screen_width - train_dropdown_anchor.x - padding
+                    option_width = max(train_dropdown_anchor.width, min(needed_width, max_option_width))
+                selected_idx = None
+                if self.train_model_selected in self.train_models:
+                    selected_idx = self.train_models.index(self.train_model_selected)
+                train_dropdown_layout = (
+                    train_dropdown_anchor.x,
+                    train_dropdown_anchor.y,
+                    train_dropdown_anchor.width,
+                    train_dropdown_anchor.height,
+                    options,
+                    list_options,
+                    option_width,
+                    selected_idx
+                )
+            else:
+                self.train_dropdown_rect = None
+                self.train_option_rects = []
+                self.train_dropdown_open = False
             
             # If TRAINING, we also need to draw the falling piece if Visual Mode is ON
             if is_training and self.train_params['visual_mode']:
@@ -1435,8 +1623,30 @@ class Game:
                  
                  if self.current_piece:
                      self.ui.draw_pentomino(self.current_piece, offset_x, offset_y, self.cell_size)
+
+            if train_dropdown_layout:
+                (drop_x, drop_y, drop_w, drop_h, options, list_options, option_width, selected_idx) = train_dropdown_layout
+                self.train_dropdown_rect, option_rects = self.ui.draw_dropdown(
+                    drop_x,
+                    drop_y,
+                    drop_w,
+                    drop_h,
+                    self._get_train_dropdown_label(),
+                    options,
+                    selected_idx,
+                    self.train_dropdown_open,
+                    mouse_pos,
+                    font=self.ui.small_font,
+                    option_width=option_width,
+                    list_options=list_options
+                )
+                self.train_option_rects = list(zip(option_rects, self.train_models))
             
         else:
+            self.train_dropdown_rect = None
+            self.train_option_rects = []
+            self.train_dropdown_open = False
+
             # Standard Padding
             padding = 20
             
@@ -1585,7 +1795,7 @@ class Game:
         self.train_params['min_size'] = min_size
         self.train_params['max_size'] = max_size
 
-    def _apply_epsilon_range(self, min_percent, current_percent):
+    def _apply_epsilon_range(self, min_percent, current_percent, apply_current=True):
         min_percent = int(max(0, min(20, min_percent)))
         current_percent = int(max(0, min(20, current_percent)))
         if min_percent > current_percent:
@@ -1594,7 +1804,8 @@ class Game:
         self.train_params['epsilon_current_percent'] = current_percent
         if self.agent:
             self.agent.update_hyperparameters()
-            self.agent.epsilon = max(current_percent / 100.0, self.agent.epsilon_min)
+            if apply_current:
+                self.agent.epsilon = max(current_percent / 100.0, self.agent.epsilon_min)
 
     def _select_epsilon_handle(self, mouse_x, rect):
         min_percent = int(self.train_params.get('epsilon_min_percent', 5))
@@ -1649,6 +1860,7 @@ class Game:
             val_percent = max(0, min(20, val_percent))
             min_percent = int(self.train_params.get('epsilon_min_percent', 5))
             current_percent = int(self.train_params.get('epsilon_current_percent', 20))
+            prev_current = current_percent
             handle = self.active_slider_handle
             if handle is None:
                 handle = self._select_epsilon_handle(mouse_x, rect)
@@ -1658,6 +1870,10 @@ class Game:
             else:
                 current_percent = val_percent
             self._apply_epsilon_range(min_percent, current_percent)
+            if handle == 'current':
+                new_current = int(self.train_params.get('epsilon_current_percent', prev_current))
+                if new_current != prev_current:
+                    self.epsilon_override_pending = True
         elif self.active_slider == 'learning_rate':
             # Map 0-1 to 0.0001 - 0.0050
             lr = 0.0001 + (val * 0.0049)
