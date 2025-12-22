@@ -100,6 +100,7 @@ class Game:
         self.agent = None
         self.training_step_count = 0
         self.current_trajectory = [] # Buffer for current piece's moves
+        self.piece_history = deque() # Pending piece trajectories for delayed rewards
         self.start_stats = (0, 0, 0) # (Height, Holes, Jaggedness) at start of piece
         self.last_save_time = 0 # Track last auto-save time
         
@@ -252,6 +253,10 @@ class Game:
 
     def get_short_game_length(self):
         """Get the number of pieces for a short game (1-20)."""
+        return self.get_piece_history_length()
+
+    def get_piece_history_length(self):
+        """Get the number of pieces to track for reward history (1-20)."""
         return max(1, min(20, self.train_params.get('pieces_tracked', 10)))
 
     def get_watch_ai_fall_speed(self):
@@ -404,6 +409,7 @@ class Game:
         self.pieces_locked = 0
         self.fall_speed = 1000
         self.current_trajectory = []
+        self.piece_history = deque()
         self.pending_reward_event = None
         self.short_games_move_count = 0
         
@@ -923,16 +929,51 @@ class Game:
         self.state = "GAMEOVER"
         self.audio.stop()
 
-    def apply_trajectory_reward(self, trajectory, reward_value, lines_cleared, is_game_over):
-        """Apply a reward to the given trajectory and push to agent memory."""
+    def _flush_piece_entry(self, entry):
+        self.agent.add_trajectory_with_done(entry['trajectory'], entry['reward'])
+        self.agent.record_training_stats(len(entry['trajectory']), entry['lines'], entry['game_over'])
+
+    def _flush_oldest_piece_history(self):
+        entry = self.piece_history.popleft()
+        self._flush_piece_entry(entry)
+
+    def _flush_piece_history(self):
+        while self.piece_history:
+            self._flush_oldest_piece_history()
+
+    def apply_trajectory_reward(self, trajectory, reward_value, lines_cleared, is_game_over, flush_all=False):
+        """Accumulate reward over recent pieces and push once they age out."""
         if not self.agent or not trajectory:
             return
 
         if is_game_over:
             reward_value -= 2.0
 
-        self.agent.add_trajectory_with_done(trajectory, reward_value)
-        self.agent.record_training_stats(len(trajectory), lines_cleared, is_game_over)
+        history_len = self.get_piece_history_length()
+        entry = {
+            'trajectory': trajectory,
+            'reward': 0.0,
+            'lines': lines_cleared,
+            'game_over': is_game_over
+        }
+        self.piece_history.append(entry)
+
+        if history_len <= 1:
+            entry['reward'] += reward_value
+        else:
+            gamma = 0.1 ** (1.0 / (history_len - 1))
+            age = 0
+            for piece_entry in reversed(self.piece_history):
+                if age >= history_len:
+                    break
+                piece_entry['reward'] += reward_value * (gamma ** age)
+                age += 1
+
+        while len(self.piece_history) >= history_len:
+            self._flush_oldest_piece_history()
+
+        if flush_all:
+            self._flush_piece_history()
 
     def finish_training_round(self):
         """Handle end-of-game bookkeeping and restart training."""
@@ -1123,11 +1164,11 @@ class Game:
             # Apply reward to this piece's trajectory
             if self.state == "ANIMATING_CLEAR":
                 # Store trajectory with reward for after animation completes
-                self.pending_reward_event = (trajectory, reward, lines_cleared, is_game_over)
+                self.pending_reward_event = (trajectory, reward, lines_cleared, is_game_over, piece_limit_reached)
             elif is_headless_clearing:
                 pending_reward = reward
             else:
-                self.apply_trajectory_reward(trajectory, reward, lines_cleared, is_game_over)
+                self.apply_trajectory_reward(trajectory, reward, lines_cleared, is_game_over, flush_all=done)
 
             # HEADLESS DEFERRED ACTIONS
             # If we had deferred line clearing, execute it now
@@ -1148,9 +1189,9 @@ class Game:
                 if is_game_over:
                     done = True
 
-                self.apply_trajectory_reward(trajectory, pending_reward, lines_cleared, is_game_over)
+                self.apply_trajectory_reward(trajectory, pending_reward, lines_cleared, is_game_over, flush_all=done)
 
-            if done:
+            if done and self.state != "ANIMATING_CLEAR":
                 self.finish_training_round()
         
         # Auto-save every 5 minutes
@@ -1314,11 +1355,12 @@ class Game:
                 
                 # Process pending reward even if game over happened after the clear
                 if was_training and self.pending_reward_event is not None:
-                    trajectory, reward_value, pending_lines, pending_game_over = self.pending_reward_event
+                    trajectory, reward_value, pending_lines, pending_game_over, pending_end_episode = self.pending_reward_event
                     reward_game_over = pending_game_over or game_over_after_spawn
-                    self.apply_trajectory_reward(trajectory, reward_value, pending_lines, reward_game_over)
+                    end_episode = pending_end_episode or reward_game_over
+                    self.apply_trajectory_reward(trajectory, reward_value, pending_lines, reward_game_over, flush_all=end_episode)
                     self.pending_reward_event = None
-                    if reward_game_over:
+                    if end_episode:
                         self.finish_training_round()
 
     def draw(self):
