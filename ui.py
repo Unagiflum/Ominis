@@ -315,11 +315,16 @@ class UI:
         self.draw_group_box(padding, current_y, left_pane_width, reward_height, "Reward & Curriculum")
         
         sy = current_y + 35
-        # Min Randomness % (0% - 10%)
+        # Current / Min Rand. % (0% - 20%)
         min_rand_raw = params.get('epsilon_min_percent', 5)
-        min_rand = max(0, min(10, min_rand_raw))
-        s_rect = self.draw_slider(slider_x, sy, slider_width, min_rand / 10.0, f"Min. Randomness: {min_rand}%", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
-        if not is_training: slider_rects['epsilon_min_percent'] = s_rect
+        current_rand_raw = params.get('epsilon_current_percent', 20)
+        min_rand = max(0, min(20, min_rand_raw))
+        current_rand = max(0, min(20, current_rand_raw))
+        floor_rand = min(min_rand, current_rand)
+        current_rand = max(min_rand, current_rand)
+        label = f"Randomness: {current_rand}%->{floor_rand}%"
+        s_rect = self.draw_range_slider(slider_x, sy, slider_width, floor_rand / 20.0, current_rand / 20.0, label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+        if not is_training: slider_rects['epsilon_range_percent'] = s_rect
         sy += 45
         
         # Learning Rate (0.0001 - 0.0050)
@@ -329,10 +334,16 @@ class UI:
         if not is_training: slider_rects['learning_rate'] = s_rect
         sy += 45
         
-        # Max Polyomino Size (1, 2, 3, 4, 5)
-        # Range 1-5, span 4.
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (params['max_size'] - 1) / 4.0, f"Max Piece Size: {params['max_size']}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
-        if not is_training: slider_rects['max_size'] = s_rect
+        # Piece Size Range (1-5)
+        min_size = params.get('min_size', 1)
+        max_size = params.get('max_size', 5)
+        min_size = max(1, min(5, int(min_size)))
+        max_size = max(1, min(5, int(max_size)))
+        floor_size = min(min_size, max_size)
+        ceil_size = max(min_size, max_size)
+        label = f"Piece Size: {floor_size}->{ceil_size}"
+        s_rect = self.draw_range_slider(slider_x, sy, slider_width, (floor_size - 1) / 4.0, (ceil_size - 1) / 4.0, label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+        if not is_training: slider_rects['piece_size_range'] = s_rect
         sy += 45
 
         # Big Piece Weight (1 - 4)
@@ -556,5 +567,47 @@ class UI:
             color = self.accent_color
             
         pygame.draw.rect(self.screen, color, handle_rect, border_radius=4)
+        
+        return bar_rect
+
+    def draw_range_slider(self, x, y, width, min_value, max_value, label, mouse_pos=None, font=None, active=True, bar_offset_y=0):
+        if font is None:
+            font = self.font
+        # Label
+        label_color = self.text_color if active else (120, 120, 120)
+        text = font.render(label, True, label_color)
+        self.screen.blit(text, (x + width//2 - text.get_width()//2, y - 25))
+        
+        # Bar
+        bar_y = y + bar_offset_y
+        bar_rect = pygame.Rect(x, bar_y, width, 10)
+        bar_color = (50, 50, 50) if active else (35, 35, 35)
+        pygame.draw.rect(self.screen, bar_color, bar_rect, border_radius=5)
+        
+        # Active range
+        start = int(min(min_value, max_value) * width)
+        end = int(max(min_value, max_value) * width)
+        active_color = self.border_color if active else (80, 80, 80)
+        if end > start:
+            active_rect = pygame.Rect(x + start, bar_y, end - start, 10)
+            pygame.draw.rect(self.screen, active_color, active_rect, border_radius=5)
+        
+        # Handles
+        min_handle_x = x + start
+        max_handle_x = x + end
+        min_handle_rect = pygame.Rect(min_handle_x - 8, bar_y - 8, 16, 26)
+        max_handle_rect = pygame.Rect(max_handle_x - 8, bar_y - 8, 16, 26)
+        
+        color = self.text_color if active else (100, 100, 100)
+        min_color = color
+        max_color = color
+        if active and mouse_pos:
+            if min_handle_rect.collidepoint(mouse_pos):
+                min_color = self.accent_color
+            if max_handle_rect.collidepoint(mouse_pos):
+                max_color = self.accent_color
+        
+        pygame.draw.rect(self.screen, min_color, min_handle_rect, border_radius=4)
+        pygame.draw.rect(self.screen, max_color, max_handle_rect, border_radius=4)
         
         return bar_rect

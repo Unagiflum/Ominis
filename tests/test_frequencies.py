@@ -5,17 +5,18 @@ import os
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from tetrominoes import get_allowed_shapes, SHAPES
+from tetrominoes import get_allowed_shapes, get_shape_weights, SHAPES
 
 def test_frequencies():
     print("Testing Weighted Frequencies (Training Mode)...")
     weight_base = 2
-    allowed_weighted = get_allowed_shapes(include_pentominoes=True, include_tetrominoes=True, include_ominis=True, max_size=5, weighted=True, weight_base=weight_base)
+    allowed_weighted = get_allowed_shapes(include_pentominoes=True, include_tetrominoes=True, include_ominis=True, max_size=5)
+    weights = get_shape_weights(allowed_weighted, weight_base=weight_base)
     
     counts = {}
-    for shape in allowed_weighted:
+    for shape, weight in zip(allowed_weighted, weights):
         size = len(SHAPES[shape])
-        counts[size] = counts.get(size, 0) + 1
+        counts[size] = counts.get(size, 0) + weight
         
     print(f"Counts per size: {counts}")
     
@@ -50,7 +51,7 @@ def test_frequencies():
             
     # Verify unweighted
     print("\nTesting Unweighted (Standard Mode)...")
-    allowed_unweighted = get_allowed_shapes(include_pentominoes=True, include_tetrominoes=True, include_ominis=True, max_size=5, weighted=False)
+    allowed_unweighted = get_allowed_shapes(include_pentominoes=True, include_tetrominoes=True, include_ominis=True, max_size=5)
     unweighted_counts = {}
     for shape in allowed_unweighted:
         size = len(SHAPES[shape])

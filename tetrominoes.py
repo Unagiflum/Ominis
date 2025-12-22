@@ -117,12 +117,13 @@ SHAPE_COLORS = {
     'Monomino': (192, 192, 192), # Silver/Gray
 }
 
-def get_allowed_shapes(include_pentominoes=True, include_tetrominoes=False, include_ominis=False, max_size=5, weighted=False, weight_base=1.0):
+def get_allowed_shapes(include_pentominoes=True, include_tetrominoes=False, include_ominis=False, max_size=5, min_size=1):
     allowed = []
-    base = max(1.0, float(weight_base)) if weighted else 1.0
+    min_size = max(1, int(min_size))
+    max_size = max(min_size, int(max_size))
     for shape, blocks in SHAPES.items():
         count = len(blocks)
-        if count > max_size:
+        if count < min_size or count > max_size:
             continue
             
         should_add = False
@@ -134,38 +135,28 @@ def get_allowed_shapes(include_pentominoes=True, include_tetrominoes=False, incl
             should_add = True
             
         if should_add:
-            if weighted:
-                # Add base^n copies
-                # Example (base=2):
-                # Size 1: 2^1 = 2
-                # Size 2: 2^2 = 4
-                # Size 3: 2^3 = 8
-                # Size 4: 2^4 = 16
-                # Size 5: 2^5 = 32
-                # Note: User request wording: "for every 1 1-omino, there would be 2 dominoes, 8 triominoes, and 56 tetrominoes."
-                # User example breakdown:
-                # "if size 4 enabled... for every 1-omino, there should be 2 dominoes, 4 of each type of triomino... and 8 of each of the 7 tetrominoes"
-                # This implies 2^(size-1) * base_weight? Or just 2^size?
-                # User says: "polyominoes of size n are 2^n represented"
-                # Let's check the example math:
-                # 1-omino (size 1): 2^1 = 2 per shape. (1 shape: Monomino) -> Total 2.
-                # Domino (size 2): 2^2 = 4 per shape. (1 shape: Domino) -> Total 4. Ratio 4:2 = 2:1. Correct ("2 dominoes per 1-omino").
-                # Triomino (size 3): 2^3 = 8 per shape. (2 shapes: I, L). Total 16. Ratio 16:2 = 8:1. Correct ("8 triominoes per 1-omino").
-                # Tetromino (size 4): 2^4 = 16 per shape. (7 shapes). Total 16*7 = 112. ratio 112:2 = 56:1. Correct ("56 tetrominoes").
-                
-                weight = max(1, int(math.ceil(base ** count))) # can use float as the base, higher means more weight on larger shapes
-                allowed.extend([shape] * weight)
-            else:
-                allowed.append(shape)
+            allowed.append(shape)
     return allowed
 
+def get_shape_weights(shapes, weight_base=1.0):
+    base = max(1.0, float(weight_base))
+    weights = []
+    for shape in shapes:
+        count = len(SHAPES[shape])
+        weight = max(1, int(math.ceil(base ** count)))
+        weights.append(weight)
+    return weights
+
 class Pentomino:
-    def __init__(self, x, y, allowed_shapes=None):
+    def __init__(self, x, y, allowed_shapes=None, allowed_weights=None):
         self.x = x
         self.y = y
         
         if allowed_shapes:
-            self.type = random.choice(allowed_shapes)
+            if allowed_weights is not None:
+                self.type = random.choices(allowed_shapes, weights=allowed_weights, k=1)[0]
+            else:
+                self.type = random.choice(allowed_shapes)
         else:
             self.type = random.choice(list(SHAPES.keys()))
             

@@ -25,6 +25,11 @@ class MonteCarloAgent:
         self.params['gamma'] = 1.0
         self.epsilon = 0.7 # Initial exploration rate
         self.epsilon_min = self.params.get('epsilon_min_percent', 5) / 100.0 # Minimum exploration rate (Default 5%)
+        epsilon_current_percent = self.params.get('epsilon_current_percent')
+        if epsilon_current_percent is not None:
+            epsilon_current_percent = max(0, min(20, epsilon_current_percent))
+            self.epsilon = epsilon_current_percent / 100.0
+        self.epsilon = max(self.epsilon, self.epsilon_min)
         self.epsilon_decay = 0.9997 # Decay per training step
         lr = self.params.get('learning_rate', 0.0001)
         # Clamp to UI-supported range

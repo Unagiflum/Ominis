@@ -44,6 +44,7 @@ class Game:
         self.include_ominis = False
         self.volume = 0.5
         self.allowed_shapes = []
+        self.allowed_shape_weights = None
         
         # UI Rects (for click detection)
         self.chk_pent_rect = None
@@ -78,7 +79,9 @@ class Game:
             'hl_size_idx': 1, # index into self.hl_sizes (0=128 ... 4=2048)
             'hl_count': 2,
             'epsilon_min_percent': 5,
+            'epsilon_current_percent': 20,
             'learning_rate': 0.001,
+            'min_size': 1,
             'max_size': 5,
             'big_piece_weight': 1,
             'pieces_tracked': 10,
@@ -87,6 +90,7 @@ class Game:
         }
         self.train_slider_rects = {}
         self.active_slider = None
+        self.active_slider_handle = None
 
         # Input handling state (DAS - Delayed Auto Shift)
         self.das_delay = 200 # ms before repeat starts
@@ -110,6 +114,10 @@ class Game:
         self.train_params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, int(self.train_params.get('hl_size_idx', 1))))
         self.train_params['gamma'] = 1.0
         self.train_params['big_piece_weight'] = max(1, min(4, int(self.train_params.get('big_piece_weight', 1))))
+        self._apply_piece_size_range(
+            self.train_params.get('min_size', 1),
+            self.train_params.get('max_size', 5)
+        )
 
     def get_model_filename(self):
         """Generates filename based on current architecture params."""
@@ -135,6 +143,15 @@ class Game:
                     for k, v in saved_params.items():
                         if k in self.train_params:
                             self.train_params[k] = v
+                # Clamp epsilon range to UI-supported bounds
+                min_percent = int(self.train_params.get('epsilon_min_percent', 5))
+                current_percent = int(self.train_params.get('epsilon_current_percent', 20))
+                min_percent = max(0, min(20, min_percent))
+                current_percent = max(0, min(20, current_percent))
+                if min_percent > current_percent:
+                    min_percent, current_percent = current_percent, min_percent
+                self.train_params['epsilon_min_percent'] = min_percent
+                self.train_params['epsilon_current_percent'] = current_percent
                 # Clamp learning rate to supported slider range
                 self.train_params['learning_rate'] = max(0.0001, min(0.005, self.train_params.get('learning_rate', 0.001)))
                 self.train_params['gamma'] = 1.0
@@ -353,7 +370,7 @@ class Game:
 
     def spawn_piece(self):
         """Spawn a piece centered by its bounding box with an unbiased tie-break."""
-        p = Pentomino(0, 0, self.allowed_shapes)
+        p = Pentomino(0, 0, self.allowed_shapes, self.allowed_shape_weights)
 
         # Bounding box in the current (already randomized) rotation
         min_x = min(x for x, _ in p.shape)
@@ -394,22 +411,25 @@ class Game:
         original_state = self.state
         
         # Determine allowed shapes based on selection
-        from tetrominoes import get_allowed_shapes
+        from tetrominoes import get_allowed_shapes, get_shape_weights
         
+        min_size = 1
         max_size = 5
+        self.allowed_shape_weights = None
         if self.state == "TRAINING" or self.state == "TRAIN_MENU": # Use training params
-             max_size = self.train_params['max_size']
+             min_size = self.train_params.get('min_size', 1)
+             max_size = self.train_params.get('max_size', 5)
              big_weight = max(1, min(4, int(self.train_params.get('big_piece_weight', 1))))
-             # In training, maybe we force all types enabled? Or respect checkboxes?
-             # User said "Max size polyomino to include". Implies we include everything up to that size.
-             # So let's enable all flags if in training, but filter by size.
-             self.allowed_shapes = get_allowed_shapes(True, True, True, max_size, weighted=True, weight_base=big_weight)
+             # In training, include all groups but filter by size range.
+             self.allowed_shapes = get_allowed_shapes(True, True, True, max_size, min_size=min_size)
+             self.allowed_shape_weights = get_shape_weights(self.allowed_shapes, weight_base=big_weight)
         else:
              self.allowed_shapes = get_allowed_shapes(self.include_pentominoes, self.include_tetrominoes, self.include_ominis)
         
         # Fallback if nothing selected (should be prevented by UI, but safety first)
         if not self.allowed_shapes:
              self.allowed_shapes = get_allowed_shapes(True, False, False)
+             self.allowed_shape_weights = None
         self.current_piece = self.spawn_piece()
         self.start_stats = self.get_grid_stats()
         self.next_piece = self.spawn_piece()
@@ -576,6 +596,11 @@ class Game:
                                         print(f"Failed to load model {model_file}: {e}")
                                 else:
                                     print(f"No existing model found for {model_file}, starting fresh.")
+
+                                self._apply_epsilon_range(
+                                    self.train_params.get('epsilon_min_percent', 5),
+                                    self.train_params.get('epsilon_current_percent', 20)
+                                )
                                 
                                 self.save_settings()
                                 
@@ -593,12 +618,19 @@ class Game:
                         for name, rect in self.train_slider_rects.items():
                             if rect.collidepoint(event.pos):
                                 self.active_slider = name
+                                if name == 'epsilon_range_percent':
+                                    self.active_slider_handle = self._select_epsilon_handle(event.pos[0], rect)
+                                elif name == 'piece_size_range':
+                                    self.active_slider_handle = self._select_piece_size_handle(event.pos[0], rect)
+                                else:
+                                    self.active_slider_handle = None
                                 self.update_train_slider(event.pos[0])
                         
                         # Check Epsilon Reset Button
                         if self.btn_eps_reset_rect and self.btn_eps_reset_rect.collidepoint(event.pos):
                             if self.agent:
-                                self.agent.epsilon = self.epsilon_bump_value
+                                bump_percent = int(round(self.epsilon_bump_value * 100))
+                                self._apply_epsilon_range(self.train_params.get('epsilon_min_percent', 5), bump_percent)
                                 self.agent.save(self.get_model_filename())
                                 print(f"Epsilon manually reset to {self.epsilon_bump_value} and saved.")
                             else:
@@ -613,6 +645,7 @@ class Game:
                 elif event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 1:
                         self.active_slider = None
+                        self.active_slider_handle = None
                         self.dragging_slider = False
                         
                 elif event.type == pygame.MOUSEMOTION:
@@ -1502,6 +1535,55 @@ class Game:
             self.volume = max(0.0, min(1.0, vol))
             self.audio.set_volume(self.volume)
 
+    def _apply_piece_size_range(self, min_size, max_size):
+        min_size = int(max(1, min(5, min_size)))
+        max_size = int(max(1, min(5, max_size)))
+        if min_size > max_size:
+            min_size, max_size = max_size, min_size
+        self.train_params['min_size'] = min_size
+        self.train_params['max_size'] = max_size
+
+    def _apply_epsilon_range(self, min_percent, current_percent):
+        min_percent = int(max(0, min(20, min_percent)))
+        current_percent = int(max(0, min(20, current_percent)))
+        if min_percent > current_percent:
+            min_percent, current_percent = current_percent, min_percent
+        self.train_params['epsilon_min_percent'] = min_percent
+        self.train_params['epsilon_current_percent'] = current_percent
+        if self.agent:
+            self.agent.update_hyperparameters()
+            self.agent.epsilon = max(current_percent / 100.0, self.agent.epsilon_min)
+
+    def _select_epsilon_handle(self, mouse_x, rect):
+        min_percent = int(self.train_params.get('epsilon_min_percent', 5))
+        current_percent = int(self.train_params.get('epsilon_current_percent', 20))
+        min_percent = max(0, min(20, min_percent))
+        current_percent = max(0, min(20, current_percent))
+        floor_percent = min(min_percent, current_percent)
+        current_percent = max(min_percent, current_percent)
+        floor_x = rect.x + (floor_percent / 20.0) * rect.width
+        current_x = rect.x + (current_percent / 20.0) * rect.width
+        if floor_percent == current_percent:
+            return 'current' if mouse_x >= current_x else 'min'
+        if abs(mouse_x - floor_x) <= abs(mouse_x - current_x):
+            return 'min'
+        return 'current'
+
+    def _select_piece_size_handle(self, mouse_x, rect):
+        min_size = int(self.train_params.get('min_size', 1))
+        max_size = int(self.train_params.get('max_size', 5))
+        min_size = max(1, min(5, min_size))
+        max_size = max(1, min(5, max_size))
+        floor_size = min(min_size, max_size)
+        ceil_size = max(min_size, max_size)
+        min_x = rect.x + ((floor_size - 1) / 4.0) * rect.width
+        max_x = rect.x + ((ceil_size - 1) / 4.0) * rect.width
+        if floor_size == ceil_size:
+            return 'max' if mouse_x >= max_x else 'min'
+        if abs(mouse_x - min_x) <= abs(mouse_x - max_x):
+            return 'min'
+        return 'max'
+
     def update_train_slider(self, mouse_x):
         if not self.active_slider:
             return
@@ -1519,20 +1601,40 @@ class Game:
             # Map 0-1 to 1, 2, 3, 4
             count = 1 + int(val * 3.99)
             self.train_params['hl_count'] = count
-        elif self.active_slider == 'epsilon_min_percent':
-            # Map 0-1 to 0-10
-            val_percent = int(val * 10)
-            self.train_params['epsilon_min_percent'] = max(0, min(10, val_percent))
-            if self.agent: self.agent.update_hyperparameters()
+        elif self.active_slider == 'epsilon_range_percent':
+            # Map 0-1 to 0-20
+            val_percent = int(val * 20)
+            val_percent = max(0, min(20, val_percent))
+            min_percent = int(self.train_params.get('epsilon_min_percent', 5))
+            current_percent = int(self.train_params.get('epsilon_current_percent', 20))
+            handle = self.active_slider_handle
+            if handle is None:
+                handle = self._select_epsilon_handle(mouse_x, rect)
+                self.active_slider_handle = handle
+            if handle == 'min':
+                min_percent = val_percent
+            else:
+                current_percent = val_percent
+            self._apply_epsilon_range(min_percent, current_percent)
         elif self.active_slider == 'learning_rate':
             # Map 0-1 to 0.0001 - 0.0050
             lr = 0.0001 + (val * 0.0049)
             self.train_params['learning_rate'] = round(lr, 5)
             if self.agent: self.agent.update_hyperparameters()
-        elif self.active_slider == 'max_size':
+        elif self.active_slider == 'piece_size_range':
             # Map 0-1 to 1, 2, 3, 4, 5
             size = 1 + int(val * 4.99)
-            self.train_params['max_size'] = size
+            min_size = int(self.train_params.get('min_size', 1))
+            max_size = int(self.train_params.get('max_size', 5))
+            handle = self.active_slider_handle
+            if handle is None:
+                handle = self._select_piece_size_handle(mouse_x, rect)
+                self.active_slider_handle = handle
+            if handle == 'min':
+                min_size = size
+            else:
+                max_size = size
+            self._apply_piece_size_range(min_size, max_size)
         elif self.active_slider == 'big_piece_weight':
             # Map 0-1 to 1, 2, 3, 4
             weight = 1 + int(val * 3.99)
