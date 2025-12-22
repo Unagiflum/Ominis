@@ -11,7 +11,7 @@ class UI:
         self.large_font = pygame.font.SysFont("Consolas", 40, bold=True)
         self.score_font = pygame.font.SysFont("Consolas", 28, bold=True)
         
-        self.bg_color = (10, 10, 20) # Deep dark blue/black
+        self.bg_color = (30, 30, 30) # Plain dark gray
         self.grid_bg_color = (5, 5, 10)
         self.text_color = (200, 240, 255) # Cyan-ish white
         self.border_color = (0, 255, 255) # Cyan neon
@@ -32,21 +32,7 @@ class UI:
         return (trimmed + "...") if trimmed else "..."
 
     def draw_background(self):
-        # Draw scrolling grid
-        t = time.time() - self.start_time
-        scroll_y = (t * 20) % 40
-        scroll_x = (t * 10) % 40
-        
         self.screen.fill(self.bg_color)
-        
-        # Draw grid lines
-        grid_color = (20, 20, 40)
-        for x in range(0, self.screen.get_width(), 40):
-            pygame.draw.line(self.screen, grid_color, (x, 0), (x, self.screen.get_height()))
-        for y in range(0, self.screen.get_height(), 40):
-            draw_y = y + scroll_y
-            if draw_y < self.screen.get_height():
-                pygame.draw.line(self.screen, grid_color, (0, draw_y), (self.screen.get_width(), draw_y))
 
     def draw_block(self, x, y, size, color):
         rect = pygame.Rect(x, y, size, size)
