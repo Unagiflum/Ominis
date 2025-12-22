@@ -289,15 +289,16 @@ class UI:
         slider_rects = {}
         slider_width = 170
         slider_x = padding + (left_pane_width - slider_width) // 2
+        slider_bar_offset = -3
         
         sy = current_y + 40
         # Hidden Layer Size
-        s_rect = self.draw_slider(slider_x, sy, slider_width, hl_size_idx / max_hl_idx, f"Hidden Size: {hl_size_val}", mouse_pos, self.small_font, active=not is_training)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, hl_size_idx / max_hl_idx, f"Hidden Size: {hl_size_val}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
         if not is_training: slider_rects['hl_size'] = s_rect
         sy += 50
         
         # Hidden Layer Count (1, 2, 3, 4)
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (params['hl_count'] - 1) / 3.0, f"Hidden Layers: {params['hl_count']}", mouse_pos, self.small_font, active=not is_training)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (params['hl_count'] - 1) / 3.0, f"Hidden Layers: {params['hl_count']}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
         if not is_training: slider_rects['hl_count'] = s_rect
         
         # Epsilon Reset Button
@@ -317,33 +318,33 @@ class UI:
         # Min Randomness % (0% - 10%)
         min_rand_raw = params.get('epsilon_min_percent', 5)
         min_rand = max(0, min(10, min_rand_raw))
-        s_rect = self.draw_slider(slider_x, sy, slider_width, min_rand / 10.0, f"Min. Randomness: {min_rand}%", mouse_pos, self.small_font, active=not is_training)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, min_rand / 10.0, f"Min. Randomness: {min_rand}%", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
         if not is_training: slider_rects['epsilon_min_percent'] = s_rect
         sy += 45
         
         # Learning Rate (0.0001 - 0.0050)
         lr = params.get('learning_rate', 0.001)
         lr = max(0.0001, min(0.005, lr))
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (lr - 0.0001) / 0.0049, f"Learning Rate: {lr:.4f}", mouse_pos, self.small_font, active=not is_training)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (lr - 0.0001) / 0.0049, f"Learning Rate: {lr:.4f}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
         if not is_training: slider_rects['learning_rate'] = s_rect
         sy += 45
         
         # Max Polyomino Size (1, 2, 3, 4, 5)
         # Range 1-5, span 4.
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (params['max_size'] - 1) / 4.0, f"Max Piece Size: {params['max_size']}", mouse_pos, self.small_font, active=not is_training)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (params['max_size'] - 1) / 4.0, f"Max Piece Size: {params['max_size']}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
         if not is_training: slider_rects['max_size'] = s_rect
         sy += 45
 
         # Big Piece Weight (1 - 4)
         big_weight = params.get('big_piece_weight', 1)
         big_weight = max(1, min(4, int(big_weight)))
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (big_weight - 1) / 3.0, f"Big Piece Weight: {big_weight}", mouse_pos, self.small_font, active=not is_training)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (big_weight - 1) / 3.0, f"Big Piece Weight: {big_weight}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
         if not is_training: slider_rects['big_piece_weight'] = s_rect
         sy += 45
         
         # Short Game Length (how many pieces before auto-restart in short games mode)
         short_game_length = max(1, min(20, params.get('pieces_tracked', 10)))
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (short_game_length - 1) / 19.0, f"Piece History: {short_game_length}", mouse_pos, self.small_font, active=not is_training)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (short_game_length - 1) / 19.0, f"Piece History: {short_game_length}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
         if not is_training: slider_rects['pieces_tracked'] = s_rect
         sy += 25
         
@@ -370,7 +371,7 @@ class UI:
         # Volume Slider
         # Only relevant if visual mode is on? Or always show? User said "need not do anything when visual mode is off".
         # Let's show it always for consistency.
-        vol_slider_rect = self.draw_slider(padding + 10, bottom_y, 150, volume, "Volume", mouse_pos, self.small_font)
+        vol_slider_rect = self.draw_slider(padding + 10, bottom_y, 150, volume, "Volume", mouse_pos, self.small_font, bar_offset_y=slider_bar_offset)
         
         # Draw Game Board on Right
         offset_x = left_pane_width + padding * 2
@@ -526,7 +527,7 @@ class UI:
 
         return rect, option_rects
 
-    def draw_slider(self, x, y, width, value, label, mouse_pos=None, font=None, active=True):
+    def draw_slider(self, x, y, width, value, label, mouse_pos=None, font=None, active=True, bar_offset_y=0):
         if font is None:
             font = self.font
         # Label
@@ -535,19 +536,20 @@ class UI:
         self.screen.blit(text, (x + width//2 - text.get_width()//2, y - 25))
         
         # Bar
-        bar_rect = pygame.Rect(x, y, width, 10)
+        bar_y = y + bar_offset_y
+        bar_rect = pygame.Rect(x, bar_y, width, 10)
         bar_color = (50, 50, 50) if active else (35, 35, 35)
         pygame.draw.rect(self.screen, bar_color, bar_rect, border_radius=5)
         
         # Active part of bar
         active_width = int(value * width)
-        active_rect = pygame.Rect(x, y, active_width, 10)
+        active_rect = pygame.Rect(x, bar_y, active_width, 10)
         active_color = self.border_color if active else (80, 80, 80)
         pygame.draw.rect(self.screen, active_color, active_rect, border_radius=5)
         
         # Handle
         handle_x = x + active_width
-        handle_rect = pygame.Rect(handle_x - 8, y - 8, 16, 26)
+        handle_rect = pygame.Rect(handle_x - 8, bar_y - 8, 16, 26)
         
         color = self.text_color if active else (100, 100, 100)
         if active and mouse_pos and handle_rect.collidepoint(mouse_pos):

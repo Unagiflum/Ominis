@@ -36,9 +36,10 @@ class MonteCarloAgent:
         self.lines_since_train = 0
         self.gameovers_since_train = 0
         self.inference_moves_since_train = 0
+        self.pieces_since_train = 0
         
         # Benchmarking history
-        # Stores tuples of (inference_moves, lines_cleared, game_overs)
+        # Stores tuples of (inference_moves, pieces_locked, lines_cleared, game_overs)
         self.history = deque(maxlen=100)
         
         # Device
@@ -107,8 +108,8 @@ class MonteCarloAgent:
                         last_line = lines[-1].strip()
                         if last_line:
                             try:
-                                # Format: Batch, Moves per Line, Lines per Game
-                                # 1000, 181.4, 8.041
+                                # Format: Batch, Lines per Piece, Lines per Game
+                                # 1000, 0.0600, 4.235
                                 last_batch = int(last_line.split(',')[0])
                                 self.training_steps = last_batch
                                 print(f"Resuming logging from batch {self.training_steps}")
@@ -120,7 +121,7 @@ class MonteCarloAgent:
             # Create new file with header (wiping if exists)
             try:
                 with open(self.csv_path, 'w') as f:
-                    f.write("Batch, Moves per Line, Lines per Game\n")
+                    f.write("Batch, Lines per Piece, Lines per Game\n")
             except Exception as e:
                 print(f"Error creating CSV file: {e}")
 
@@ -356,12 +357,13 @@ class MonteCarloAgent:
         """
         self.memory.append((state, action_idx, R_piece))
 
-    def record_training_stats(self, samples_added, lines_cleared, is_game_over):
+    def record_training_stats(self, samples_added, lines_cleared, is_game_over, pieces_locked=1):
         """
         Track stats for when to trigger training.
         """
         self.total_samples_since_train += samples_added
         self.lines_since_train += lines_cleared
+        self.pieces_since_train += pieces_locked
         if is_game_over:
             self.gameovers_since_train += 1
         self._maybe_train()
@@ -380,16 +382,16 @@ class MonteCarloAgent:
             return
         
         # Capture stats for logging before reset
-        samples_trained_on = self.total_samples_since_train
         lines = self.lines_since_train
         inference_moves = self.inference_moves_since_train
+        pieces = self.pieces_since_train
 
         self.replay()
         # Per-window stats
         gameovers = self.gameovers_since_train
         
         # Add current window to history
-        self.history.append((inference_moves, lines, gameovers))
+        self.history.append((inference_moves, pieces, lines, gameovers))
         
         self.training_steps += 1
         
@@ -397,21 +399,21 @@ class MonteCarloAgent:
         if self.training_steps > 0 and self.training_steps % 300 == 0:
             self._log_progress_to_csv()
         
-        if lines > 0:
-            moves_per_line = inference_moves / lines
-            mpline_str = f"{moves_per_line:.1f}"
+        if pieces > 0:
+            lines_per_piece = lines / pieces
+            lpp_str = f"{lines_per_piece:.4f}"
         else:
-            mpline_str = "N/A"
+            lpp_str = "N/A"
             
-        # Running average: Sum of moves / Sum of lines
-        total_moves_hist = sum(h[0] for h in self.history)
-        total_lines_hist = sum(h[1] for h in self.history)
+        # Running average: Sum of lines / Sum of pieces
+        total_pieces_hist = sum(h[1] for h in self.history)
+        total_lines_hist = sum(h[2] for h in self.history)
         
-        if total_lines_hist > 0:
-            avg_mpl = total_moves_hist / total_lines_hist
-            mpline_str += f" (ave: {avg_mpl:.1f})"
+        if total_pieces_hist > 0:
+            avg_lpp = total_lines_hist / total_pieces_hist
+            lpp_str += f" (ave: {avg_lpp:.4f})"
         else:
-             mpline_str += " (ave: N/A)"
+            lpp_str += " (ave: N/A)"
 
         if gameovers > 0:
             lines_per_game = lines / gameovers
@@ -420,7 +422,7 @@ class MonteCarloAgent:
             lines_per_game_str = "N/A"
             
         # Running average: Sum of lines / Sum of gameovers
-        total_gameovers_hist = sum(h[2] for h in self.history)
+        total_gameovers_hist = sum(h[3] for h in self.history)
             
         if total_gameovers_hist > 0:
             avg_lpg = total_lines_hist / total_gameovers_hist
@@ -429,13 +431,13 @@ class MonteCarloAgent:
             lines_per_game_str += " (ave: N/A)"
 
         epsilon_str = f"{self.epsilon:.3f}"
-        gamma_str = f"{self.gamma:.2f}"
-        print(f"Trained on {samples_trained_on} samples; {lines} lines, {gameovers} Game Overs; Moves/Line = {mpline_str}; Lines/Game = {lines_per_game_str}; Epsilon = {epsilon_str}; Gamma = {gamma_str}")
+        print(f"{inference_moves} moves, {pieces} pieces, {lines} lines, {gameovers} Game Overs || Lines / Piece = {lpp_str} || Lines / Game = {lines_per_game_str} || Epsilon = {epsilon_str}")
 
         self.total_samples_since_train = 0
         self.lines_since_train = 0
         self.gameovers_since_train = 0
         self.inference_moves_since_train = 0
+        self.pieces_since_train = 0
 
     def _mirror_state_action(self, state, action_idx):
         """
@@ -537,13 +539,13 @@ class MonteCarloAgent:
     def _log_progress_to_csv(self):
         """Append progress stats to CSV file."""
         # Calculate running averages from history
-        total_moves = sum(h[0] for h in self.history)
-        total_lines = sum(h[1] for h in self.history)
-        total_gameovers = sum(h[2] for h in self.history)
+        total_lines = sum(h[2] for h in self.history)
+        total_pieces = sum(h[1] for h in self.history)
+        total_gameovers = sum(h[3] for h in self.history)
         
-        avg_mpl = 0.0
-        if total_lines > 0:
-            avg_mpl = total_moves / total_lines
+        avg_lpp = 0.0
+        if total_pieces > 0:
+            avg_lpp = total_lines / total_pieces
             
         avg_lpg = 0.0
         if total_gameovers > 0:
@@ -558,10 +560,10 @@ class MonteCarloAgent:
         try:
             with open(self.csv_path, 'a') as f:
                 if write_header:
-                     f.write("Batch, Moves per Line, Lines per Game\n")
+                    f.write("Batch, Lines per Piece, Lines per Game\n")
                 
-                # Format: Batch, Moves_per_Line, Lines_per_Game
-                f.write(f"{self.training_steps}, {avg_mpl:.1f}, {avg_lpg:.3f}\n")
+                # Format: Batch, Lines_per_Piece, Lines_per_Game
+                f.write(f"{self.training_steps}, {avg_lpp:.4f}, {avg_lpg:.3f}\n")
         except PermissionError:
             print(f"Skipping log for batch {self.training_steps}: File is locked.")
         except Exception as e:

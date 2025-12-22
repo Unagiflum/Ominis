@@ -45,7 +45,7 @@ def test_logging():
     with open(csv_path, 'r') as f:
         header = f.readline().strip()
         lines = f.readlines()
-        if header != "Batch, Moves per Line, Lines per Game":
+        if header != "Batch, Lines per Piece, Lines per Game":
             print(f"FAIL: Incorrect header: {header}")
             return
         if len(lines) > 0:
@@ -55,7 +55,7 @@ def test_logging():
     
     # 2. Add some history and log
     print("\n--- Test 2: Logging Data ---")
-    agent.history.append((100, 10, 1))
+    agent.history.append((100, 20, 10, 1))
     agent.training_steps = 1000
     agent._log_progress_to_csv()
     
@@ -66,7 +66,7 @@ def test_logging():
             return
         entry = lines[1].strip()
         print(f"Log Entry: {entry}")
-        if "1000, 10.0, 10.000" not in entry:
+        if "1000, 0.5000, 10.000" not in entry:
              print("FAIL: Log entry content mismatch")
              return
     print("PASS: Logging correct")
