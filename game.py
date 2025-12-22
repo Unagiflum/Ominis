@@ -1573,6 +1573,8 @@ class Game:
                 display_grid = Grid(self.grid_width, self.grid_height, self.cell_size)
             
             is_training = (self.state == "TRAINING" or (self.state in ["ANIMATING_CLEAR", "ANIMATING_DROP"] and hasattr(self, 'pre_anim_state') and self.pre_anim_state == "TRAINING"))
+            dropdown_active = not is_training
+            dropdown_open = self.train_dropdown_open and dropdown_active
             self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.train_slider_rects, self.train_slider_rect, self.short_games_chk_rect, train_dropdown_anchor = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, display_grid, is_training=is_training, volume=self.volume)
 
             train_dropdown_layout = None
@@ -1582,7 +1584,7 @@ class Game:
                 options = [os.path.splitext(name)[0] for name in self.train_models]
                 list_options = list(self.train_models)
                 option_width = None
-                if self.train_dropdown_open:
+                if dropdown_open:
                     text_font = self.ui.small_font
                     max_text_width = text_font.size("No models found")[0]
                     for option in list_options:
@@ -1634,11 +1636,12 @@ class Game:
                     self._get_train_dropdown_label(),
                     options,
                     selected_idx,
-                    self.train_dropdown_open,
+                    dropdown_open,
                     mouse_pos,
                     font=self.ui.small_font,
                     option_width=option_width,
-                    list_options=list_options
+                    list_options=list_options,
+                    active=dropdown_active
                 )
                 self.train_option_rects = list(zip(option_rects, self.train_models))
             

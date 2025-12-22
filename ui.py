@@ -464,15 +464,16 @@ class UI:
         return rect
 
 
-    def draw_dropdown(self, x, y, width, height, label, options, selected_idx=None, is_open=False, mouse_pos=None, font=None, option_width=None, list_options=None):
+    def draw_dropdown(self, x, y, width, height, label, options, selected_idx=None, is_open=False, mouse_pos=None, font=None, option_width=None, list_options=None, active=True):
         if font is None:
             font = self.font
         rect = pygame.Rect(x, y, width, height)
+        is_open = is_open and active
 
         # Base box
         pygame.draw.rect(self.screen, self.bg_color, rect, border_radius=10)
-        color = self.text_color
-        if mouse_pos and rect.collidepoint(mouse_pos):
+        color = self.text_color if active else (100, 100, 100)
+        if active and mouse_pos and rect.collidepoint(mouse_pos):
             color = self.accent_color
         pygame.draw.rect(self.screen, color, rect, 2, border_radius=10)
 
