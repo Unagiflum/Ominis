@@ -80,8 +80,9 @@ class Game:
             'epsilon_min_percent': 5,
             'learning_rate': 0.001,
             'max_size': 5,
+            'big_piece_weight': 1,
             'pieces_tracked': 10,
-            'gamma': 0.70,
+            'gamma': 1.0,
             'short_games': False
         }
         self.train_slider_rects = {}
@@ -107,6 +108,8 @@ class Game:
         self.load_settings()
         # Ensure hidden size index stays within the available architecture options
         self.train_params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, int(self.train_params.get('hl_size_idx', 1))))
+        self.train_params['gamma'] = 1.0
+        self.train_params['big_piece_weight'] = max(1, min(4, int(self.train_params.get('big_piece_weight', 1))))
 
     def get_model_filename(self):
         """Generates filename based on current architecture params."""
@@ -134,6 +137,8 @@ class Game:
                             self.train_params[k] = v
                 # Clamp learning rate to supported slider range
                 self.train_params['learning_rate'] = max(0.0001, min(0.005, self.train_params.get('learning_rate', 0.001)))
+                self.train_params['gamma'] = 1.0
+                self.train_params['big_piece_weight'] = max(1, min(4, int(self.train_params.get('big_piece_weight', 1))))
                 print("Loaded settings from settings.json")
             except Exception as e:
                 print(f"Failed to load settings: {e}")
@@ -394,10 +399,11 @@ class Game:
         max_size = 5
         if self.state == "TRAINING" or self.state == "TRAIN_MENU": # Use training params
              max_size = self.train_params['max_size']
+             big_weight = max(1, min(4, int(self.train_params.get('big_piece_weight', 1))))
              # In training, maybe we force all types enabled? Or respect checkboxes?
              # User said "Max size polyomino to include". Implies we include everything up to that size.
              # So let's enable all flags if in training, but filter by size.
-             self.allowed_shapes = get_allowed_shapes(True, True, True, max_size, weighted=True)
+             self.allowed_shapes = get_allowed_shapes(True, True, True, max_size, weighted=True, weight_base=big_weight)
         else:
              self.allowed_shapes = get_allowed_shapes(self.include_pentominoes, self.include_tetrominoes, self.include_ominis)
         
@@ -1523,17 +1529,14 @@ class Game:
             lr = 0.0001 + (val * 0.0049)
             self.train_params['learning_rate'] = round(lr, 5)
             if self.agent: self.agent.update_hyperparameters()
-        elif self.active_slider == 'gamma':
-            # Map 0-1 to 0.1 - 1.0
-            raw_gamma = 0.1 + (val * 0.9)
-            # Snap to 0.05 increments
-            gamma = round(raw_gamma * 20) / 20.0
-            self.train_params['gamma'] = max(0.1, min(1.0, gamma))
-            if self.agent: self.agent.update_hyperparameters()
         elif self.active_slider == 'max_size':
             # Map 0-1 to 1, 2, 3, 4, 5
             size = 1 + int(val * 4.99)
             self.train_params['max_size'] = size
+        elif self.active_slider == 'big_piece_weight':
+            # Map 0-1 to 1, 2, 3, 4
+            weight = 1 + int(val * 3.99)
+            self.train_params['big_piece_weight'] = max(1, min(4, weight))
         elif self.active_slider == 'pieces_tracked':
             # Map 0-1 to 1-20
             count = 1 + int(val * 19)

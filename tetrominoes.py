@@ -117,8 +117,9 @@ SHAPE_COLORS = {
     'Monomino': (192, 192, 192), # Silver/Gray
 }
 
-def get_allowed_shapes(include_pentominoes=True, include_tetrominoes=False, include_ominis=False, max_size=5, weighted=False):
+def get_allowed_shapes(include_pentominoes=True, include_tetrominoes=False, include_ominis=False, max_size=5, weighted=False, weight_base=1.0):
     allowed = []
+    base = max(1.0, float(weight_base)) if weighted else 1.0
     for shape, blocks in SHAPES.items():
         count = len(blocks)
         if count > max_size:
@@ -134,7 +135,8 @@ def get_allowed_shapes(include_pentominoes=True, include_tetrominoes=False, incl
             
         if should_add:
             if weighted:
-                # Add 2^n copies
+                # Add base^n copies
+                # Example (base=2):
                 # Size 1: 2^1 = 2
                 # Size 2: 2^2 = 4
                 # Size 3: 2^3 = 8
@@ -151,7 +153,7 @@ def get_allowed_shapes(include_pentominoes=True, include_tetrominoes=False, incl
                 # Triomino (size 3): 2^3 = 8 per shape. (2 shapes: I, L). Total 16. Ratio 16:2 = 8:1. Correct ("8 triominoes per 1-omino").
                 # Tetromino (size 4): 2^4 = 16 per shape. (7 shapes). Total 16*7 = 112. ratio 112:2 = 56:1. Correct ("56 tetrominoes").
                 
-                weight = max(1, int(math.ceil(1.0 ** count))) # can use float as the base, higher means more weight on larger shapes
+                weight = max(1, int(math.ceil(base ** count))) # can use float as the base, higher means more weight on larger shapes
                 allowed.extend([shape] * weight)
             else:
                 allowed.append(shape)

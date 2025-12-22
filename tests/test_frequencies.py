@@ -9,7 +9,8 @@ from tetrominoes import get_allowed_shapes, SHAPES
 
 def test_frequencies():
     print("Testing Weighted Frequencies (Training Mode)...")
-    allowed_weighted = get_allowed_shapes(include_pentominoes=True, include_tetrominoes=True, include_ominis=True, max_size=5, weighted=True)
+    weight_base = 2
+    allowed_weighted = get_allowed_shapes(include_pentominoes=True, include_tetrominoes=True, include_ominis=True, max_size=5, weighted=True, weight_base=weight_base)
     
     counts = {}
     for shape in allowed_weighted:
@@ -36,7 +37,7 @@ def test_frequencies():
     expected_counts = {}
     for size, count in shape_counts_by_size.items():
         if size <= 5:
-            expected_counts[size] = count * (2 ** size)
+            expected_counts[size] = count * (weight_base ** size)
             
     print(f"Expected logical counts: {expected_counts}")
     

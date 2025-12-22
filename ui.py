@@ -328,17 +328,17 @@ class UI:
         if not is_training: slider_rects['learning_rate'] = s_rect
         sy += 45
         
-        # Move Discount (Gamma) (0.1 - 1.0)
-        gamma = params.get('gamma', 0.70)
-        gamma = max(0.1, min(1.0, gamma))
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (gamma - 0.1) / 0.9, f"Gamma (Discount): {gamma:.2f}", mouse_pos, self.small_font, active=not is_training)
-        if not is_training: slider_rects['gamma'] = s_rect
-        sy += 45
-
         # Max Polyomino Size (1, 2, 3, 4, 5)
         # Range 1-5, span 4.
         s_rect = self.draw_slider(slider_x, sy, slider_width, (params['max_size'] - 1) / 4.0, f"Max Piece Size: {params['max_size']}", mouse_pos, self.small_font, active=not is_training)
         if not is_training: slider_rects['max_size'] = s_rect
+        sy += 45
+
+        # Big Piece Weight (1 - 4)
+        big_weight = params.get('big_piece_weight', 1)
+        big_weight = max(1, min(4, int(big_weight)))
+        s_rect = self.draw_slider(slider_x, sy, slider_width, (big_weight - 1) / 3.0, f"Big Piece Weight: {big_weight}", mouse_pos, self.small_font, active=not is_training)
+        if not is_training: slider_rects['big_piece_weight'] = s_rect
         sy += 45
         
         # Short Game Length (how many pieces before auto-restart in short games mode)

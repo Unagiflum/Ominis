@@ -21,7 +21,8 @@ class MonteCarloAgent:
         
         # Hyperparameters
         self.batch_size = 5000 # Batch size for training (doubled with mirroring)
-        self.gamma = self.params.get('gamma', 0.70) # Discount factor
+        self.gamma = 1.0 # Discount factor (fixed)
+        self.params['gamma'] = 1.0
         self.epsilon = 0.7 # Initial exploration rate
         self.epsilon_min = self.params.get('epsilon_min_percent', 5) / 100.0 # Minimum exploration rate (Default 5%)
         self.epsilon_decay = 0.9997 # Decay per training step
@@ -568,7 +569,8 @@ class MonteCarloAgent:
 
     def update_hyperparameters(self):
         """Update hyperparameters from self.params (which are shared with UI)."""
-        self.gamma = self.params.get('gamma', 0.70)
+        self.gamma = 1.0
+        self.params['gamma'] = 1.0
         self.epsilon_min = self.params.get('epsilon_min_percent', 5) / 100.0
         lr = self.params.get('learning_rate', 0.0001)
         lr = max(0.0001, min(0.005, lr))
