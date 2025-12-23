@@ -24,7 +24,7 @@ class Game:
         self.ui = UI(self.screen)
         self.audio = AudioPlayer("assets/music", "assets/sounds")
         
-        self.state = "MENU" # MENU, PLAYING, GAMEOVER, ANIMATING_CLEAR, ANIMATING_DROP, PAUSED
+        self.state = "MENU" # MENU, PLAY_MENU, WATCH_MENU, PLAYING, WATCH_AI, GAMEOVER, TRAIN_MENU, TRAINING, ANIMATING_CLEAR, ANIMATING_DROP, PAUSED
         self.score = 0
         self.level = 1
         self.lines_cleared_total = 0
@@ -45,6 +45,12 @@ class Game:
         self.volume = 0.5
         self.allowed_shapes = []
         self.allowed_shape_weights = None
+        self.active_min_size = 1
+        self.active_max_size = 5
+        self.play_min_size = 1
+        self.play_max_size = 5
+        self.watch_min_size = 1
+        self.watch_max_size = 5
         
         # UI Rects (for click detection)
         self.chk_pent_rect = None
@@ -54,6 +60,9 @@ class Game:
         self.btn_train_rect = None
         self.btn_watch_rect = None
         self.btn_back_rect = None
+        self.btn_play_start_rect = None
+        self.btn_watch_start_rect = None
+        self.btn_main_menu_rect = None
         self.train_chk_rect = None
         self.btn_train_start_rect = None
         self.btn_train_save_rect = None
@@ -61,17 +70,27 @@ class Game:
         self.btn_quit_rect = None
         self.slider_rect = None
         self.train_slider_rect = None
+        self.play_slider_rect = None
+        self.watch_slider_rect = None
         self.dragging_slider = False
+        self.dragging_size_slider = False
+        self.active_size_slider = None
+        self.active_size_handle = None
         self.watch_dropdown_rect = None
-        self.watch_play_rect = None
-        self.watch_option_rects = []
         self.watch_dropdown_open = False
+        self.watch_dropdown_scroll = 0
+        self.watch_dropdown_visible = 0
+        self.watch_dropdown_list_width = 0
+        self.watch_option_rects = []
         self.watch_models = []
         self.watch_model_selected = None
 
         self.train_dropdown_rect = None
-        self.train_option_rects = []
         self.train_dropdown_open = False
+        self.train_dropdown_scroll = 0
+        self.train_dropdown_visible = 0
+        self.train_dropdown_list_width = 0
+        self.train_option_rects = []
         self.train_models = []
         self.train_model_selected = None
         self.train_model_source = None
@@ -346,8 +365,7 @@ class Game:
         if agent:
             self.agent = agent
             self.audio.stop()
-            self.reset(start_music=True)
-            self.state = "WATCH_AI"
+            self.reset(start_music=True, state_override="WATCH_AI")
         else:
             self.agent = None
 
@@ -548,7 +566,7 @@ class Game:
         p.y = -max_y - 1
         return p
 
-    def reset(self, start_music=True):
+    def reset(self, start_music=True, state_override=None):
         self.grid = Grid(self.grid_width, self.grid_height, self.cell_size)
         self.score = 0
         self.level = 1
@@ -566,8 +584,6 @@ class Game:
         # Determine allowed shapes based on selection
         from tetrominoes import get_allowed_shapes, get_shape_weights
         
-        min_size = 1
-        max_size = 5
         self.allowed_shape_weights = None
         if self.state == "TRAINING" or self.state == "TRAIN_MENU": # Use training params
              min_size = self.train_params.get('min_size', 1)
@@ -577,7 +593,10 @@ class Game:
              self.allowed_shapes = get_allowed_shapes(True, True, True, max_size, min_size=min_size)
              self.allowed_shape_weights = get_shape_weights(self.allowed_shapes, weight_base=big_weight)
         else:
-             self.allowed_shapes = get_allowed_shapes(self.include_pentominoes, self.include_tetrominoes, self.include_ominis)
+             min_size, max_size = self._clamp_piece_size_range(self.active_min_size, self.active_max_size)
+             self.active_min_size = min_size
+             self.active_max_size = max_size
+             self.allowed_shapes = get_allowed_shapes(True, True, True, max_size, min_size=min_size)
         
         # Fallback if nothing selected (should be prevented by UI, but safety first)
         if not self.allowed_shapes:
@@ -589,7 +608,7 @@ class Game:
         
         # Only set to PLAYING if not already in TRAINING (to avoid overwriting state during training reset)
         if self.state != "TRAINING":
-            self.state = "PLAYING"
+            self.state = state_override if state_override is not None else "PLAYING"
             
         self.left_held_time = 0
         self.right_held_time = 0
@@ -709,28 +728,26 @@ class Game:
             action = self.input_manager.get_action(event)
             
             if action == "EXIT":
-                if self.state == "TRAINING" and self.agent:
+                if self.state in ["TRAINING", "TRAIN_MENU"] and self.agent:
                     self.agent.save(self.get_model_filename())
                     print(f"Model saved ({self.get_model_filename()}).")
                     self.save_settings()
 
-                if self.state == "PLAYING" or self.state == "GAMEOVER" or self.state == "WATCH_AI" or self.state == "TRAIN_MENU" or self.state == "TRAINING":
+                if self.state in ["PLAYING", "PLAY_MENU", "GAMEOVER", "WATCH_AI", "WATCH_MENU", "TRAIN_MENU", "TRAINING"]:
+                    if self.state in ["PLAYING", "PLAY_MENU", "GAMEOVER", "WATCH_AI", "WATCH_MENU"]:
+                        self.clear_game_state()
                     self.state = "MENU"
                     self.audio.stop()
+                    self.watch_dropdown_open = False
             
             if self.state == "MENU":
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1: # Left click
                         mouse_pos = event.pos
-                        if self.chk_pent_rect and self.chk_pent_rect.collidepoint(mouse_pos):
-                            self.include_pentominoes = not self.include_pentominoes
-                        elif self.chk_tet_rect and self.chk_tet_rect.collidepoint(mouse_pos):
-                            self.include_tetrominoes = not self.include_tetrominoes
-                        elif self.chk_omi_rect and self.chk_omi_rect.collidepoint(mouse_pos):
-                            self.include_ominis = not self.include_ominis
-                        elif self.btn_start_rect and self.btn_start_rect.collidepoint(mouse_pos):
-                            if self.include_pentominoes or self.include_tetrominoes or self.include_ominis:
-                                self.reset()
+                        if self.btn_start_rect and self.btn_start_rect.collidepoint(mouse_pos):
+                            self.clear_game_state()
+                            self.state = "PLAY_MENU"
+                            self.audio.stop()
                         elif self.btn_train_rect and self.btn_train_rect.collidepoint(mouse_pos):
                             self.state = "TRAIN_MENU"
                             self.initialize_train_menu()
@@ -738,13 +755,12 @@ class Game:
                             if not self.train_params['visual_mode']:
                                 self.audio.stop()
                         elif self.btn_watch_rect and self.btn_watch_rect.collidepoint(mouse_pos):
-                            if self.include_pentominoes or self.include_tetrominoes or self.include_ominis:
-                                self.reset(start_music=False)
-                                self.state = "WATCH_AI"
-                                self.agent = None
-                                self.watch_model_selected = None
-                                self.watch_dropdown_open = False
-                                self.refresh_watch_models()
+                            self.clear_game_state()
+                            self.state = "WATCH_MENU"
+                            self.audio.stop()
+                            self.agent = None
+                            self.watch_dropdown_open = False
+                            self.refresh_watch_models()
 
             elif self.state == "TRAIN_MENU":
                 if event.type == pygame.MOUSEBUTTONDOWN:
@@ -771,10 +787,16 @@ class Game:
                             self.train_dropdown_open = not self.train_dropdown_open
                             if self.train_dropdown_open:
                                 self.refresh_train_models()
+                                self.train_dropdown_scroll = 0
                             continue
 
                         if self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
+                            if self.agent:
+                                self.agent.save(self.get_model_filename())
+                                print(f"Model saved ({self.get_model_filename()}).")
+                                self.save_settings()
                             self.state = "MENU"
+                            self.audio.stop()
                         elif self.train_chk_rect and self.train_chk_rect.collidepoint(event.pos):
                             self.train_params['visual_mode'] = not self.train_params['visual_mode']
                         elif self.agent and self.btn_train_save_rect and self.btn_train_save_rect.collidepoint(event.pos):
@@ -874,6 +896,10 @@ class Game:
 
                             self.dragging_slider = True
                             self.update_volume(event.pos[0], is_train_slider=True)
+                    elif event.button in (4, 5):
+                        if self.train_dropdown_open:
+                            delta = -1 if event.button == 4 else 1
+                            self._scroll_dropdown("train", delta)
                                 
                 elif event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 1:
@@ -886,8 +912,11 @@ class Game:
                         self.update_train_slider(event.pos[0])
                     elif self.dragging_slider:
                         self.update_volume(event.pos[0], is_train_slider=True)
+                elif event.type == pygame.MOUSEWHEEL:
+                    if self.train_dropdown_open:
+                        self._scroll_dropdown("train", -event.y)
 
-            elif self.state == "WATCH_AI" or (self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI") or (self.state == "GAMEOVER" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI"):
+            elif self.state == "WATCH_MENU" or self.state == "WATCH_AI" or (self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI") or (self.state == "GAMEOVER" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI"):
                  if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         mouse_pos = event.pos
@@ -908,34 +937,87 @@ class Game:
                         if dropdown_handled:
                             continue
 
-                        if self.btn_back_rect and self.btn_back_rect.collidepoint(mouse_pos):
+                        if self.btn_main_menu_rect and self.btn_main_menu_rect.collidepoint(mouse_pos):
+                            self.clear_game_state()
                             self.state = "MENU"
                             self.audio.stop()
                             self.watch_dropdown_open = False
-                        elif self.watch_play_rect and self.watch_play_rect.collidepoint(mouse_pos):
-                            if self.watch_model_selected:
+                        elif self.btn_watch_start_rect and self.btn_watch_start_rect.collidepoint(mouse_pos):
+                            start_active = self.watch_model_selected in self.watch_models
+                            if start_active:
+                                self.active_min_size, self.active_max_size = self._clamp_piece_size_range(self.watch_min_size, self.watch_max_size)
                                 self.start_watch_ai()
                         elif self.watch_dropdown_rect and self.watch_dropdown_rect.collidepoint(mouse_pos):
                             self.watch_dropdown_open = not self.watch_dropdown_open
                             if self.watch_dropdown_open:
                                 self.refresh_watch_models()
+                                self.watch_dropdown_scroll = 0
+                        elif self.watch_slider_rect and self.watch_slider_rect.collidepoint(mouse_pos):
+                            self.active_size_slider = "WATCH"
+                            self.active_size_handle = self._select_size_handle(mouse_pos[0], self.watch_slider_rect, self.watch_min_size, self.watch_max_size)
+                            self.dragging_size_slider = True
+                            self.dragging_slider = False
+                            self.update_size_slider(mouse_pos[0])
                         elif self.slider_rect and self.slider_rect.collidepoint(mouse_pos):
                             self.dragging_slider = True
+                            self.dragging_size_slider = False
                             self.update_volume(mouse_pos[0])
+                    elif event.button in (4, 5):
+                        if self.watch_dropdown_open:
+                            delta = -1 if event.button == 4 else 1
+                            self._scroll_dropdown("watch", delta)
                  elif event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 1:
                         self.dragging_slider = False
+                        self.dragging_size_slider = False
+                        self.active_size_slider = None
+                        self.active_size_handle = None
                  elif event.type == pygame.MOUSEMOTION:
-                    if self.dragging_slider:
+                    if self.dragging_size_slider:
+                        self.update_size_slider(event.pos[0])
+                    elif self.dragging_slider:
                         self.update_volume(event.pos[0])
+                 elif event.type == pygame.MOUSEWHEEL:
+                    if self.watch_dropdown_open:
+                        self._scroll_dropdown("watch", -event.y)
 
-            elif self.state == "PLAYING" or self.state == "PAUSED" or self.state == "GAMEOVER" or self.state == "TRAINING":
+            elif self.state == "PLAY_MENU" or self.state == "PLAYING" or (self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "PLAYING") or (self.state == "GAMEOVER" and hasattr(self, 'last_state') and self.last_state == "PLAYING"):
                  if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
-                        if self.btn_quit_rect and self.btn_quit_rect.collidepoint(event.pos):
+                        mouse_pos = event.pos
+                        if self.btn_main_menu_rect and self.btn_main_menu_rect.collidepoint(mouse_pos):
+                            self.clear_game_state()
                             self.state = "MENU"
                             self.audio.stop()
-                        elif self.state == "TRAINING" and self.train_chk_rect and self.train_chk_rect.collidepoint(event.pos):
+                        elif self.btn_play_start_rect and self.btn_play_start_rect.collidepoint(mouse_pos):
+                            self.active_min_size, self.active_max_size = self._clamp_piece_size_range(self.play_min_size, self.play_max_size)
+                            self.reset(start_music=True, state_override="PLAYING")
+                        elif self.play_slider_rect and self.play_slider_rect.collidepoint(mouse_pos):
+                            self.active_size_slider = "PLAY"
+                            self.active_size_handle = self._select_size_handle(mouse_pos[0], self.play_slider_rect, self.play_min_size, self.play_max_size)
+                            self.dragging_size_slider = True
+                            self.dragging_slider = False
+                            self.update_size_slider(mouse_pos[0])
+                        elif self.slider_rect and self.slider_rect.collidepoint(mouse_pos):
+                            self.dragging_slider = True
+                            self.dragging_size_slider = False
+                            self.update_volume(event.pos[0])
+                 elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:
+                        self.dragging_slider = False
+                        self.dragging_size_slider = False
+                        self.active_size_slider = None
+                        self.active_size_handle = None
+                 elif event.type == pygame.MOUSEMOTION:
+                    if self.dragging_size_slider:
+                        self.update_size_slider(event.pos[0])
+                    elif self.dragging_slider:
+                        self.update_volume(event.pos[0])
+
+            elif self.state == "TRAINING":
+                 if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        if self.train_chk_rect and self.train_chk_rect.collidepoint(event.pos):
                             self.train_params['visual_mode'] = not self.train_params['visual_mode']
                             if not self.train_params['visual_mode']:
                                 self.audio.stop()
@@ -943,7 +1025,7 @@ class Game:
                             else:
                                 self.audio.start()
                                 print("Visual mode ON - Audio started")
-                        elif self.state == "TRAINING" and self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
+                        elif self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
                             # STOP button pressed
                             if self.agent:
                                 self.agent.save(self.get_model_filename())
@@ -952,8 +1034,8 @@ class Game:
                             self.state = "TRAIN_MENU"
                             # Stop music when returning to Train Menu
                             self.audio.stop()
-                        elif self.state == "TRAINING" and self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
-                            # BACK button pressed
+                        elif self.btn_back_rect and self.btn_back_rect.collidepoint(event.pos):
+                            # MAIN MENU button pressed
                             if self.agent:
                                 self.agent.save(self.get_model_filename())
                                 print(f"Model saved ({self.get_model_filename()}).")
@@ -961,10 +1043,7 @@ class Game:
                             self.state = "MENU"
                             # Main menu has no music
                             self.audio.stop()
-                        elif self.state != "TRAINING" and self.slider_rect and self.slider_rect.collidepoint(event.pos):
-                            self.dragging_slider = True
-                            self.update_volume(event.pos[0])
-                        elif self.state == "TRAINING" and self.train_slider_rect and self.train_slider_rect.collidepoint(event.pos):
+                        elif self.train_slider_rect and self.train_slider_rect.collidepoint(event.pos):
                             self.dragging_slider = True
                             self.update_volume(event.pos[0], is_train_slider=True)
                  elif event.type == pygame.MOUSEBUTTONUP:
@@ -972,7 +1051,7 @@ class Game:
                         self.dragging_slider = False
                  elif event.type == pygame.MOUSEMOTION:
                     if self.dragging_slider:
-                        self.update_volume(event.pos[0], is_train_slider=(self.state == "TRAINING"))
+                        self.update_volume(event.pos[0], is_train_slider=True)
                         
             if self.state == "GAMEOVER":
                 pass # No special input for now, just buttons above
@@ -1597,34 +1676,19 @@ class Game:
         if self.state == "MENU":
             title = self.ui.large_font.render("OMINIS", True, self.ui.text_color)
             self.screen.blit(title, (self.screen_width // 2 - title.get_width() // 2, 100))
-            
-            # Checkboxes Group
-            group_width = 260
-            group_x = (self.screen_width - group_width) // 2
-            group_rect = pygame.Rect(group_x, 240, group_width, 160)
-            
-            # Draw solid background first
-            pygame.draw.rect(self.screen, self.ui.bg_color, group_rect, border_radius=10)
-            
-            pygame.draw.rect(self.screen, self.ui.border_color, group_rect, 2, border_radius=10)
-            
-            # Instructions (Select Group) - Inside border
-            inst = self.ui.font.render("Select Groups:", True, self.ui.text_color)
-            self.screen.blit(inst, (group_rect.centerx - inst.get_width() // 2, 250))
-            
-            start_y = 280
-            chk_x = group_x + 20 # Padding inside box
-            self.chk_pent_rect = self.ui.draw_checkbox(chk_x, start_y, self.include_pentominoes, "Pentominoes (5)", mouse_pos)
-            self.chk_tet_rect = self.ui.draw_checkbox(chk_x, start_y + 40, self.include_tetrominoes, "Tetrominoes (4)", mouse_pos)
-            self.chk_omi_rect = self.ui.draw_checkbox(chk_x, start_y + 80, self.include_ominis, "Oligominoes (<4)", mouse_pos)
-            
-            # Start Button
-            active = self.include_pentominoes or self.include_tetrominoes or self.include_ominis
-            self.btn_start_rect = self.ui.draw_button(self.screen_width // 2 - 100, 450, 200, 50, "START GAME", active, mouse_pos)
-            
-            # AI Buttons
-            self.btn_watch_rect = self.ui.draw_button(self.screen_width // 2 - 100, 520, 200, 50, "WATCH AI PLAY", active, mouse_pos)
-            self.btn_train_rect = self.ui.draw_button(self.screen_width // 2 - 100, 590, 200, 50, "TRAIN AI", True, mouse_pos)
+            self.chk_pent_rect = None
+            self.chk_tet_rect = None
+            self.chk_omi_rect = None
+
+            button_width = 220
+            button_height = 50
+            button_gap = 20
+            start_y = 320
+            btn_x = self.screen_width // 2 - button_width // 2
+
+            self.btn_start_rect = self.ui.draw_button(btn_x, start_y, button_width, button_height, "Play Game", True, mouse_pos)
+            self.btn_watch_rect = self.ui.draw_button(btn_x, start_y + button_height + button_gap, button_width, button_height, "Watch AI Play", True, mouse_pos)
+            self.btn_train_rect = self.ui.draw_button(btn_x, start_y + (button_height + button_gap) * 2, button_width, button_height, "Train AI", True, mouse_pos)
             
         elif self.state == "TRAIN_MENU" or self.state == "TRAINING" or (self.state in ["ANIMATING_CLEAR", "ANIMATING_DROP"] and hasattr(self, 'pre_anim_state') and self.pre_anim_state == "TRAINING"):
             # In TRAINING, we still want to show the menu controls, but maybe disable some?
@@ -1667,6 +1731,16 @@ class Game:
                 selected_idx = None
                 if self.train_model_selected in self.train_models:
                     selected_idx = self.train_models.index(self.train_model_selected)
+                available_height = self.screen_height - (train_dropdown_anchor.y + train_dropdown_anchor.height) - padding
+                total_items = len(list_options)
+                visible_count = 0
+                if total_items > 0:
+                    visible_count = max(1, min(total_items, available_height // train_dropdown_anchor.height))
+                self.train_dropdown_visible = visible_count
+                max_scroll = max(0, total_items - visible_count)
+                self.train_dropdown_scroll = max(0, min(self.train_dropdown_scroll, max_scroll))
+                list_width = option_width if option_width is not None else train_dropdown_anchor.width
+                self.train_dropdown_list_width = list_width
                 train_dropdown_layout = (
                     train_dropdown_anchor.x,
                     train_dropdown_anchor.y,
@@ -1675,7 +1749,9 @@ class Game:
                     options,
                     list_options,
                     option_width,
-                    selected_idx
+                    selected_idx,
+                    visible_count,
+                    self.train_dropdown_scroll
                 )
             else:
                 self.train_dropdown_rect = None
@@ -1699,7 +1775,7 @@ class Game:
                      self.ui.draw_pentomino(self.current_piece, offset_x, offset_y, self.cell_size)
 
             if train_dropdown_layout:
-                (drop_x, drop_y, drop_w, drop_h, options, list_options, option_width, selected_idx) = train_dropdown_layout
+                (drop_x, drop_y, drop_w, drop_h, options, list_options, option_width, selected_idx, visible_count, scroll_offset) = train_dropdown_layout
                 self.train_dropdown_rect, option_rects = self.ui.draw_dropdown(
                     drop_x,
                     drop_y,
@@ -1713,9 +1789,13 @@ class Game:
                     font=self.ui.small_font,
                     option_width=option_width,
                     list_options=list_options,
-                    active=dropdown_active
+                    active=dropdown_active,
+                    scroll_offset=scroll_offset,
+                    max_visible=visible_count
                 )
-                self.train_option_rects = list(zip(option_rects, self.train_models))
+                start_idx = scroll_offset
+                visible_models = self.train_models[start_idx:start_idx + len(option_rects)]
+                self.train_option_rects = list(zip(option_rects, visible_models))
 
             if self.save_name_active:
                 overlay = pygame.Surface((self.screen_width, self.screen_height))
@@ -1762,11 +1842,14 @@ class Game:
 
             # Standard Padding
             padding = 20
+            section_gap = 12
             
             # Left Pane Layout
             left_pane_x = padding
             current_y = padding
-            watch_ui = self.state == "WATCH_AI" or (self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI") or (self.state == "GAMEOVER" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI")
+            watch_ui = self.state in ["WATCH_MENU", "WATCH_AI"] or (self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI") or (self.state == "GAMEOVER" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI")
+            if not watch_ui and self.state in ["ANIMATING_CLEAR", "ANIMATING_DROP"] and hasattr(self, 'pre_anim_state'):
+                watch_ui = (self.pre_anim_state == "WATCH_AI")
             
             # Scoreboard (Height 150)
             self.ui.draw_score(self.score, self.level, self.lines_cleared_total, left_pane_x, current_y)
@@ -1776,14 +1859,24 @@ class Game:
             self.ui.draw_preview(self.next_piece, left_pane_x, current_y, self.cell_size)
             current_y += 210 + padding
 
+            # Instructions (Variable Height)
+            instruction_mode = "WATCH_AI" if watch_ui else "PLAYING"
+            inst_height = 100 if watch_ui else 140
+            self.ui.draw_instructions(left_pane_x, current_y, mode=instruction_mode)
+            current_y += inst_height + section_gap
+
+            layout_offset = 10 if watch_ui else 20
+            current_y += layout_offset
+
+            # Volume Slider (Height ~40)
+            self.slider_rect = self.ui.draw_slider(left_pane_x + 30, current_y, 150, self.volume, "Volume", mouse_pos)
+            current_y += 40 + section_gap
+
             watch_dropdown_layout = None
             if watch_ui:
-                dropdown_height = 40
-                dropdown_width = 140
-                play_width = 60
-                gap = 10
-                import os
-                options = [os.path.splitext(name)[0] for name in self.watch_models]
+                dropdown_height = 30
+                dropdown_width = 210
+                options = list(self.watch_models)
                 list_options = list(self.watch_models)
                 option_width = None
                 if self.watch_dropdown_open:
@@ -1797,33 +1890,67 @@ class Game:
                 selected_idx = None
                 if self.watch_model_selected in self.watch_models:
                     selected_idx = self.watch_models.index(self.watch_model_selected)
-                watch_dropdown_layout = (left_pane_x, current_y, dropdown_width, dropdown_height, play_width, gap, options, list_options, option_width, selected_idx)
-                current_y += dropdown_height + padding
+                dropdown_y = current_y - 15
+                available_height = self.screen_height - (dropdown_y + dropdown_height) - padding
+                total_items = len(list_options)
+                visible_count = 0
+                if total_items > 0:
+                    visible_count = max(1, min(total_items, available_height // dropdown_height))
+                self.watch_dropdown_visible = visible_count
+                max_scroll = max(0, total_items - visible_count)
+                self.watch_dropdown_scroll = max(0, min(self.watch_dropdown_scroll, max_scroll))
+                list_width = option_width if option_width is not None else dropdown_width
+                self.watch_dropdown_list_width = list_width
+                watch_dropdown_layout = (left_pane_x, dropdown_y, dropdown_width, dropdown_height, options, list_options, option_width, selected_idx, visible_count, self.watch_dropdown_scroll)
+                current_y += dropdown_height + section_gap
             else:
                 self.watch_dropdown_rect = None
-                self.watch_play_rect = None
                 self.watch_option_rects = []
                 self.watch_dropdown_open = False
-            
-            # Instructions (Variable Height)
-            # Calculate height: lines * 25 + 20 + 20
-            # Play: 4 lines -> 100 + 40 = 140
-            # Watch: 2 lines -> 50 + 40 = 90
-            # Add extra padding to be safe against overlap
-            # Determine mode for instructions - check if we came from WATCH_AI when paused
-            instruction_mode = "WATCH_AI" if watch_ui else self.state
-            
-            inst_height = 180 if instruction_mode != "WATCH_AI" else 130
-            self.ui.draw_instructions(left_pane_x, current_y, mode=instruction_mode)
-            current_y += inst_height + padding
-            
-            # Volume Slider (Height ~40)
-            # Center in 210 width: 210 - 150 = 60 -> x + 30
-            self.slider_rect = self.ui.draw_slider(left_pane_x + 30, current_y, 150, self.volume, "Volume", mouse_pos)
-            current_y += 40 + padding
-            
-            # Buttons (Height 40)
-            btn_y = current_y
+
+            size_slider_width = 140
+            start_button_width = 60
+            start_button_height = 30
+            size_slider_x = left_pane_x
+            size_slider_y = current_y + (15 if watch_ui else 0)
+            start_button_x = size_slider_x + size_slider_width + 10
+            start_button_y = size_slider_y - 10
+
+            if watch_ui:
+                min_size, max_size = self._clamp_piece_size_range(self.watch_min_size, self.watch_max_size)
+                self.watch_min_size = min_size
+                self.watch_max_size = max_size
+            else:
+                min_size, max_size = self._clamp_piece_size_range(self.play_min_size, self.play_max_size)
+                self.play_min_size = min_size
+                self.play_max_size = max_size
+
+            label = f"Piece Size: {min_size}->{max_size}"
+            size_rect = self.ui.draw_range_slider(
+                size_slider_x,
+                size_slider_y,
+                size_slider_width,
+                (min_size - 1) / 4.0,
+                (max_size - 1) / 4.0,
+                label,
+                mouse_pos,
+                self.ui.small_font,
+                bar_offset_y=-3
+            )
+            if watch_ui:
+                self.watch_slider_rect = size_rect
+                self.play_slider_rect = None
+                start_active = self.watch_model_selected in self.watch_models
+                self.btn_watch_start_rect = self.ui.draw_button(start_button_x, start_button_y, start_button_width, start_button_height, "Start", start_active, mouse_pos, font=self.ui.small_font)
+                self.btn_play_start_rect = None
+            else:
+                self.play_slider_rect = size_rect
+                self.watch_slider_rect = None
+                self.btn_play_start_rect = self.ui.draw_button(start_button_x, start_button_y, start_button_width, start_button_height, "Start", True, mouse_pos, font=self.ui.small_font)
+                self.btn_watch_start_rect = None
+            current_y = size_slider_y + 40 + section_gap
+
+            self.btn_main_menu_rect = self.ui.draw_button(left_pane_x + 30, current_y, 150, 34, "Main Menu", True, mouse_pos)
             
             # Grid Offset
             offset_x = left_pane_x + 210 + padding
@@ -1837,23 +1964,15 @@ class Game:
             
             self.ui.draw_grid(self.grid, offset_x, offset_y, offsets, flash)
             
-            if self.state == "PLAYING" or self.state == "WATCH_AI" or self.state == "PAUSED" or self.state == "GAMEOVER":
+            if self.current_piece and (self.state == "PLAYING" or self.state == "WATCH_AI" or self.state == "PAUSED" or self.state == "GAMEOVER"):
                 # Draw Ghost Piece
                 ghost = self.get_ghost_piece()
                 if ghost and ghost.y != self.current_piece.y:
                     self.ui.draw_ghost_pentomino(ghost, offset_x, offset_y, self.cell_size)
                 
                 self.ui.draw_pentomino(self.current_piece, offset_x, offset_y, self.cell_size)
-            
-            # Back Button for Watch AI (Moved down to avoid overlap)
-            # Also show if PAUSED from WATCH_AI, or GAMEOVER from WATCH_AI
-            if self.state == "WATCH_AI" or (self.state == "PAUSED" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI") or (self.state == "GAMEOVER" and hasattr(self, 'last_state') and self.last_state == "WATCH_AI"):
-                self.btn_back_rect = self.ui.draw_button(left_pane_x + 30, btn_y, 150, 40, "BACK", True, mouse_pos)
-            
-            # Quit Button for Playing
-            # Show if PLAYING or (PAUSED and NOT from WATCH_AI) or (GAMEOVER and NOT from WATCH_AI)
-            elif self.state == "PLAYING" or (self.state == "PAUSED" and (not hasattr(self, 'last_state') or self.last_state != "WATCH_AI")) or (self.state == "GAMEOVER" and (not hasattr(self, 'last_state') or self.last_state != "WATCH_AI")):
-                self.btn_quit_rect = self.ui.draw_button(left_pane_x + 30, btn_y, 150, 40, "QUIT GAME", True, mouse_pos)
+            self.btn_back_rect = None
+            self.btn_quit_rect = None
             
             # Calculate grid rect for overlays
             grid_rect_x = offset_x
@@ -1868,26 +1987,27 @@ class Game:
                 self.ui.draw_pause_screen(grid_rect_x, grid_rect_y, grid_rect_w, grid_rect_h)
 
             if watch_dropdown_layout:
-                (drop_x, drop_y, dropdown_width, dropdown_height, play_width, gap,
-                 options, list_options, option_width, selected_idx) = watch_dropdown_layout
+                (drop_x, drop_y, dropdown_width, dropdown_height,
+                 options, list_options, option_width, selected_idx, visible_count, scroll_offset) = watch_dropdown_layout
                 self.watch_dropdown_rect, option_rects = self.ui.draw_dropdown(
                     drop_x,
                     drop_y,
                     dropdown_width,
                     dropdown_height,
-                    "Select model",
+                    "Select Model",
                     options,
                     selected_idx,
                     self.watch_dropdown_open,
                     mouse_pos,
                     font=self.ui.small_font,
                     option_width=option_width,
-                    list_options=list_options
+                    list_options=list_options,
+                    scroll_offset=scroll_offset,
+                    max_visible=visible_count
                 )
-                self.watch_option_rects = list(zip(option_rects, self.watch_models))
-                play_x = drop_x + dropdown_width + gap
-                play_active = self.watch_model_selected in self.watch_models
-                self.watch_play_rect = self.ui.draw_button(play_x, drop_y, play_width, dropdown_height, "PLAY", play_active, mouse_pos, font=self.ui.small_font)
+                start_idx = scroll_offset
+                visible_models = self.watch_models[start_idx:start_idx + len(option_rects)]
+                self.watch_option_rects = list(zip(option_rects, visible_models))
         
         pygame.display.flip()
 
@@ -1899,6 +2019,95 @@ class Game:
             vol = rel_x / rect.width
             self.volume = max(0.0, min(1.0, vol))
             self.audio.set_volume(self.volume)
+
+    def _scroll_dropdown(self, dropdown, delta):
+        if dropdown == "watch":
+            total = len(self.watch_models)
+            visible = max(1, int(self.watch_dropdown_visible) or 1)
+            max_scroll = max(0, total - visible)
+            self.watch_dropdown_scroll = max(0, min(max_scroll, self.watch_dropdown_scroll + delta))
+        elif dropdown == "train":
+            total = len(self.train_models)
+            visible = max(1, int(self.train_dropdown_visible) or 1)
+            max_scroll = max(0, total - visible)
+            self.train_dropdown_scroll = max(0, min(max_scroll, self.train_dropdown_scroll + delta))
+
+    def clear_game_state(self):
+        self.grid = Grid(self.grid_width, self.grid_height, self.cell_size)
+        self.score = 0
+        self.level = 1
+        self.lines_cleared_total = 0
+        self.pieces_locked = 0
+        self.fall_speed = 1000
+        self.current_piece = None
+        self.next_piece = None
+        self.allowed_shapes = []
+        self.allowed_shape_weights = None
+        self.current_trajectory = []
+        self.piece_history = deque()
+        self.pending_reward_event = None
+        self.short_games_move_count = 0
+        self.left_held_time = 0
+        self.right_held_time = 0
+        self.fall_time = 0
+        self.dragging_slider = False
+        self.dragging_size_slider = False
+        self.active_size_slider = None
+        self.active_size_handle = None
+
+    def _clamp_piece_size_range(self, min_size, max_size):
+        min_size = int(max(1, min(5, min_size)))
+        max_size = int(max(1, min(5, max_size)))
+        if min_size > max_size:
+            min_size, max_size = max_size, min_size
+        return min_size, max_size
+
+    def _select_size_handle(self, mouse_x, rect, min_size, max_size):
+        min_size, max_size = self._clamp_piece_size_range(min_size, max_size)
+        min_x = rect.x + ((min_size - 1) / 4.0) * rect.width
+        max_x = rect.x + ((max_size - 1) / 4.0) * rect.width
+        if min_size == max_size:
+            return 'max' if mouse_x >= max_x else 'min'
+        if abs(mouse_x - min_x) <= abs(mouse_x - max_x):
+            return 'min'
+        return 'max'
+
+    def update_size_slider(self, mouse_x):
+        if not self.active_size_slider:
+            return
+
+        rect = self.play_slider_rect if self.active_size_slider == "PLAY" else self.watch_slider_rect
+        if not rect:
+            return
+
+        rel_x = mouse_x - rect.x
+        val = max(0.0, min(1.0, rel_x / rect.width))
+        size = 1 + int(val * 4.99)
+
+        if self.active_size_slider == "PLAY":
+            min_size = self.play_min_size
+            max_size = self.play_max_size
+        else:
+            min_size = self.watch_min_size
+            max_size = self.watch_max_size
+
+        handle = self.active_size_handle
+        if handle is None:
+            handle = self._select_size_handle(mouse_x, rect, min_size, max_size)
+            self.active_size_handle = handle
+
+        if handle == 'min':
+            min_size = size
+        else:
+            max_size = size
+
+        min_size, max_size = self._clamp_piece_size_range(min_size, max_size)
+        if self.active_size_slider == "PLAY":
+            self.play_min_size = min_size
+            self.play_max_size = max_size
+        else:
+            self.watch_min_size = min_size
+            self.watch_max_size = max_size
 
     def _apply_piece_size_range(self, min_size, max_size):
         min_size = int(max(1, min(5, min_size)))

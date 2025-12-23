@@ -136,6 +136,9 @@ class UI:
         # Label
         label = self.font.render("NEXT", True, self.text_color)
         self.screen.blit(label, (x + box_size//2 - label.get_width()//2, y + 10))
+
+        if not pentomino:
+            return
         
         # Calculate shape dimensions
         xs = [x for x, y in pentomino.shape]
@@ -351,8 +354,8 @@ class UI:
         button_gap = 8
         bottom_y = screen_height - padding - button_height 
         
-        # Back Button
-        btn_back_rect = self.draw_button(padding, bottom_y, button_width, button_height, "BACK", True, mouse_pos)
+        # Main Menu Button
+        btn_back_rect = self.draw_button(padding, bottom_y, button_width, button_height, "Main Menu", True, mouse_pos)
         bottom_y -= button_height + button_gap
         
         # Start/Stop Button
@@ -502,7 +505,7 @@ class UI:
         return rect
 
 
-    def draw_dropdown(self, x, y, width, height, label, options, selected_idx=None, is_open=False, mouse_pos=None, font=None, option_width=None, list_options=None, active=True):
+    def draw_dropdown(self, x, y, width, height, label, options, selected_idx=None, is_open=False, mouse_pos=None, font=None, option_width=None, list_options=None, active=True, scroll_offset=0, max_visible=None):
         if font is None:
             font = self.font
         rect = pygame.Rect(x, y, width, height)
@@ -542,7 +545,18 @@ class UI:
                 empty_text = font.render("No models found", True, (120, 120, 120))
                 self.screen.blit(empty_text, (empty_rect.x + 8, empty_rect.y + height // 2 - empty_text.get_height() // 2))
             else:
-                for idx, option in enumerate(list_items):
+                total_items = len(list_items)
+                visible_count = total_items
+                if max_visible is not None:
+                    visible_count = max(1, min(total_items, int(max_visible)))
+                max_scroll = max(0, total_items - visible_count)
+                scroll_offset = max(0, min(int(scroll_offset), max_scroll))
+
+                start_idx = scroll_offset
+                end_idx = start_idx + visible_count
+                visible_items = list_items[start_idx:end_idx]
+
+                for idx, option in enumerate(visible_items):
                     opt_rect = pygame.Rect(x, y + height + idx * height, list_width, height)
                     pygame.draw.rect(self.screen, self.bg_color, opt_rect, border_radius=8)
                     opt_color = self.text_color
@@ -553,9 +567,27 @@ class UI:
                         s.fill(opt_color)
                         self.screen.blit(s, (opt_rect.x, opt_rect.y))
                     pygame.draw.rect(self.screen, opt_color, opt_rect, 2, border_radius=8)
-                    opt_surf = font.render(option, True, opt_color)
+                    display_option = self._truncate_text(option, list_width - 16, font)
+                    opt_surf = font.render(display_option, True, opt_color)
                     self.screen.blit(opt_surf, (opt_rect.x + 8, opt_rect.y + height // 2 - opt_surf.get_height() // 2))
                     option_rects.append(opt_rect)
+
+                if total_items > visible_count:
+                    list_rect = pygame.Rect(x, y + height, list_width, height * visible_count)
+                    fade_height = min(12, height // 2)
+                    if fade_height > 0:
+                        if scroll_offset > 0:
+                            fade = pygame.Surface((list_width, fade_height), pygame.SRCALPHA)
+                            for i in range(fade_height):
+                                alpha = int(200 * (1 - (i / float(fade_height))))
+                                pygame.draw.line(fade, (*self.bg_color, alpha), (0, i), (list_width, i))
+                            self.screen.blit(fade, (list_rect.x, list_rect.y))
+                        if end_idx < total_items:
+                            fade = pygame.Surface((list_width, fade_height), pygame.SRCALPHA)
+                            for i in range(fade_height):
+                                alpha = int(200 * (i / float(fade_height)))
+                                pygame.draw.line(fade, (*self.bg_color, alpha), (0, i), (list_width, i))
+                            self.screen.blit(fade, (list_rect.x, list_rect.y + list_rect.height - fade_height))
 
         return rect, option_rects
 
