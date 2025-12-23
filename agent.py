@@ -313,22 +313,25 @@ class MonteCarloAgent:
 
         Returns:
             Total reward for this piece placement (game over penalty applied elsewhere)
+
+        Game over penalty of 2.0 is applied in game.py. Scale rewards here accordingly            
+
         """
         reward = 0.0
 
         reward += 1.0 * lines_cleared
 
         if hole_delta < 0:
-            reward -= 0.25 * hole_delta
+            reward -= 0.45 * hole_delta
         else:
             if hole_delta > 0:
-                reward -= 0.5 * hole_delta
+                reward -= 0.50 * hole_delta
 
         if jaggedness_delta < 0:
-            reward -= 0.1 * jaggedness_delta
+            reward -= 0.25 * jaggedness_delta
         else:
             if jaggedness_delta > 0:
-                reward -= 0.2 * jaggedness_delta
+                reward -= 0.30 * jaggedness_delta
 
         return reward
 
