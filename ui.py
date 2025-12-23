@@ -248,7 +248,7 @@ class UI:
                 
             current_y += line_height
 
-    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False, volume=0.5):
+    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False, volume=0.5, save_active=True):
 
         self.draw_background()
         
@@ -346,16 +346,23 @@ class UI:
         short_games_chk_rect = self.draw_checkbox(slider_x, sy, params.get('short_games', False), "Short Games", mouse_pos, active=not is_training, font=self.small_font)
         
         # Bottom Controls
-        bottom_y = screen_height - padding - 50 
+        button_width = 150
+        button_height = 34
+        button_gap = 8
+        bottom_y = screen_height - padding - button_height 
         
         # Back Button
-        btn_back_rect = self.draw_button(padding, bottom_y, 150, 40, "BACK", True, mouse_pos)
-        bottom_y -= 50
+        btn_back_rect = self.draw_button(padding, bottom_y, button_width, button_height, "BACK", True, mouse_pos)
+        bottom_y -= button_height + button_gap
         
         # Start/Stop Button
         label = "STOP" if is_training else "START"
-        btn_start_rect = self.draw_button(padding, bottom_y, 150, 40, label, True, mouse_pos)
-        bottom_y -= 50
+        btn_start_rect = self.draw_button(padding, bottom_y, button_width, button_height, label, True, mouse_pos)
+        bottom_y -= button_height + button_gap
+
+        # Save Model Button
+        btn_save_rect = self.draw_button(padding, bottom_y, button_width, button_height, "SAVE MODEL", save_active and not is_training, mouse_pos)
+        bottom_y -= button_height + button_gap
         
         # Visual Mode Checkbox
         chk_rect = self.draw_checkbox(padding, bottom_y, params['visual_mode'], "Visual Mode", mouse_pos)
@@ -372,7 +379,7 @@ class UI:
         
         self.draw_grid(grid, offset_x, offset_y)
         
-        return btn_back_rect, chk_rect, btn_start_rect, slider_rects, vol_slider_rect, short_games_chk_rect, dropdown_rect
+        return btn_back_rect, chk_rect, btn_start_rect, btn_save_rect, slider_rects, vol_slider_rect, short_games_chk_rect, dropdown_rect
 
 
     def draw_group_box(self, x, y, width, height, title):
@@ -461,6 +468,37 @@ class UI:
         text_rect = text.get_rect(center=rect.center)
         self.screen.blit(text, text_rect)
         
+        return rect
+
+    def draw_text_input(self, x, y, width, height, text, placeholder="", active=True, mouse_pos=None, font=None):
+        if font is None:
+            font = self.font
+        rect = pygame.Rect(x, y, width, height)
+
+        pygame.draw.rect(self.screen, self.bg_color, rect, border_radius=8)
+
+        color = self.text_color if active else (100, 100, 100)
+        if active:
+            color = self.accent_color
+        elif mouse_pos and rect.collidepoint(mouse_pos):
+            color = self.accent_color
+
+        pygame.draw.rect(self.screen, color, rect, 2, border_radius=8)
+
+        display_text = text if text else placeholder
+        display_color = self.text_color if text else (120, 120, 120)
+        display_text = self._truncate_text(display_text, width - 16, font)
+        text_surf = font.render(display_text, True, display_color)
+        self.screen.blit(text_surf, (x + 8, y + height // 2 - text_surf.get_height() // 2))
+
+        if active:
+            caret_text = self._truncate_text(text, width - 16, font) if text else ""
+            caret_x = x + 8 + font.size(caret_text)[0] + 2
+            caret_y = y + 6
+            caret_h = height - 12
+            if caret_x < x + width - 6:
+                pygame.draw.line(self.screen, color, (caret_x, caret_y), (caret_x, caret_y + caret_h), 2)
+
         return rect
 
 

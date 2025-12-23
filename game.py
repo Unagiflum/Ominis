@@ -56,6 +56,7 @@ class Game:
         self.btn_back_rect = None
         self.train_chk_rect = None
         self.btn_train_start_rect = None
+        self.btn_train_save_rect = None
         self.train_visual_mode = True
         self.btn_quit_rect = None
         self.slider_rect = None
@@ -75,6 +76,11 @@ class Game:
         self.train_model_selected = None
         self.train_model_source = None
         self.train_model_arch = None
+
+        self.save_name_active = False
+        self.save_name_text = ""
+        self.save_name_rect = None
+        self.save_name_limit = 32
         
         # Architecture UI
         self.hl_sizes = [128, 256, 512, 1024, 2048]
@@ -353,6 +359,44 @@ class Game:
             print("Saved settings to settings.json")
         except Exception as e:
             print(f"Failed to save settings: {e}")
+
+    def _is_valid_model_char(self, char):
+        return char.isascii() and (char.isalnum() or char in ("-", "_", ".", " "))
+
+    def _normalize_model_filename(self, name):
+        if not name:
+            return None
+        trimmed = name.strip()
+        if not trimmed:
+            return None
+        safe_chars = [ch for ch in trimmed if self._is_valid_model_char(ch)]
+        safe_name = "".join(safe_chars).strip(" .")
+        if not safe_name:
+            return None
+        if not safe_name.lower().endswith(".pth"):
+            safe_name += ".pth"
+        return safe_name
+
+    def save_named_model(self, name):
+        import os
+        if not self.agent:
+            print("No model loaded to save.")
+            return False
+        filename = self._normalize_model_filename(name)
+        if not filename:
+            print("Model name is empty.")
+            return False
+        if not os.path.exists("models"):
+            os.makedirs("models")
+        path = os.path.join("models", filename)
+        try:
+            self.agent.save(path)
+            print(f"Model saved ({path}).")
+            self.refresh_train_models()
+            return True
+        except Exception as e:
+            print(f"Failed to save model {path}: {e}")
+            return False
 
     def get_short_game_length(self):
         """Get the number of pieces for a short game (1-20)."""
@@ -639,6 +683,28 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
+
+            if self.save_name_active:
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RETURN:
+                        if self.save_named_model(self.save_name_text):
+                            self.save_name_active = False
+                            self.save_name_text = ""
+                    elif event.key == pygame.K_ESCAPE:
+                        self.save_name_active = False
+                        self.save_name_text = ""
+                    elif event.key == pygame.K_BACKSPACE:
+                        self.save_name_text = self.save_name_text[:-1]
+                    elif event.unicode and self._is_valid_model_char(event.unicode):
+                        if len(self.save_name_text) < self.save_name_limit:
+                            self.save_name_text += event.unicode
+                    continue
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    if self.save_name_rect and not self.save_name_rect.collidepoint(event.pos):
+                        self.save_name_active = False
+                        self.save_name_text = ""
+                    continue
+                continue
             
             action = self.input_manager.get_action(event)
             
@@ -711,6 +777,11 @@ class Game:
                             self.state = "MENU"
                         elif self.train_chk_rect and self.train_chk_rect.collidepoint(event.pos):
                             self.train_params['visual_mode'] = not self.train_params['visual_mode']
+                        elif self.agent and self.btn_train_save_rect and self.btn_train_save_rect.collidepoint(event.pos):
+                            self.save_name_active = True
+                            self.save_name_text = ""
+                            self.save_name_rect = None
+                            self.train_dropdown_open = False
                         elif hasattr(self, 'short_games_chk_rect') and self.short_games_chk_rect and self.short_games_chk_rect.collidepoint(event.pos):
                             self.train_params['short_games'] = not self.train_params.get('short_games', False)
                         elif self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
@@ -1575,7 +1646,8 @@ class Game:
             is_training = (self.state == "TRAINING" or (self.state in ["ANIMATING_CLEAR", "ANIMATING_DROP"] and hasattr(self, 'pre_anim_state') and self.pre_anim_state == "TRAINING"))
             dropdown_active = not is_training
             dropdown_open = self.train_dropdown_open and dropdown_active
-            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.train_slider_rects, self.train_slider_rect, self.short_games_chk_rect, train_dropdown_anchor = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, display_grid, is_training=is_training, volume=self.volume)
+            save_active = self.agent is not None
+            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.btn_train_save_rect, self.train_slider_rects, self.train_slider_rect, self.short_games_chk_rect, train_dropdown_anchor = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, display_grid, is_training=is_training, volume=self.volume, save_active=save_active)
 
             train_dropdown_layout = None
             if train_dropdown_anchor:
@@ -1644,6 +1716,44 @@ class Game:
                     active=dropdown_active
                 )
                 self.train_option_rects = list(zip(option_rects, self.train_models))
+
+            if self.save_name_active:
+                overlay = pygame.Surface((self.screen_width, self.screen_height))
+                overlay.set_alpha(180)
+                overlay.fill((0, 0, 0))
+                self.screen.blit(overlay, (0, 0))
+
+                panel_width = 320
+                panel_height = 140
+                panel_x = (self.screen_width - panel_width) // 2
+                panel_y = (self.screen_height - panel_height) // 2
+                panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+
+                pygame.draw.rect(self.screen, self.ui.bg_color, panel_rect, border_radius=10)
+                pygame.draw.rect(self.screen, self.ui.border_color, panel_rect, 2, border_radius=10)
+
+                title = self.ui.font.render("SAVE MODEL", True, self.ui.text_color)
+                self.screen.blit(title, (panel_x + panel_width // 2 - title.get_width() // 2, panel_y + 12))
+
+                name_label = self.ui.small_font.render("Name", True, self.ui.text_color)
+                self.screen.blit(name_label, (panel_x + 20, panel_y + 52))
+
+                self.save_name_rect = self.ui.draw_text_input(
+                    panel_x + 20,
+                    panel_y + 70,
+                    panel_width - 40,
+                    28,
+                    self.save_name_text,
+                    "model-name",
+                    active=True,
+                    mouse_pos=mouse_pos,
+                    font=self.ui.small_font
+                )
+
+                hint = self.ui.small_font.render("Press Enter to save", True, (120, 120, 120))
+                self.screen.blit(hint, (panel_x + panel_width // 2 - hint.get_width() // 2, panel_y + panel_height - 26))
+            else:
+                self.save_name_rect = None
             
         else:
             self.train_dropdown_rect = None
