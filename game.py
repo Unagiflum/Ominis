@@ -1799,8 +1799,8 @@ class Game:
         self.train_params['max_size'] = max_size
 
     def _apply_epsilon_range(self, min_percent, current_percent, apply_current=True):
-        min_percent = int(max(0, min(20, min_percent)))
-        current_percent = int(max(0, min(20, current_percent)))
+        min_percent = int(max(0, min(75, min_percent)))
+        current_percent = int(max(0, min(75, current_percent)))
         if min_percent > current_percent:
             min_percent, current_percent = current_percent, min_percent
         self.train_params['epsilon_min_percent'] = min_percent
@@ -1813,12 +1813,12 @@ class Game:
     def _select_epsilon_handle(self, mouse_x, rect):
         min_percent = int(self.train_params.get('epsilon_min_percent', 5))
         current_percent = int(self.train_params.get('epsilon_current_percent', 20))
-        min_percent = max(0, min(20, min_percent))
-        current_percent = max(0, min(20, current_percent))
+        min_percent = max(0, min(75, min_percent))
+        current_percent = max(0, min(75, current_percent))
         floor_percent = min(min_percent, current_percent)
         current_percent = max(min_percent, current_percent)
-        floor_x = rect.x + (floor_percent / 20.0) * rect.width
-        current_x = rect.x + (current_percent / 20.0) * rect.width
+        floor_x = rect.x + (floor_percent / 75.0) * rect.width
+        current_x = rect.x + (current_percent / 75.0) * rect.width
         if floor_percent == current_percent:
             return 'current' if mouse_x >= current_x else 'min'
         if abs(mouse_x - floor_x) <= abs(mouse_x - current_x):
@@ -1858,9 +1858,9 @@ class Game:
             count = 1 + int(val * 3.99)
             self.train_params['hl_count'] = count
         elif self.active_slider == 'epsilon_range_percent':
-            # Map 0-1 to 0-20
-            val_percent = int(val * 20)
-            val_percent = max(0, min(20, val_percent))
+            # Map 0-1 to 0-75
+            val_percent = int(val * 75)
+            val_percent = max(0, min(75, val_percent))
             min_percent = int(self.train_params.get('epsilon_min_percent', 5))
             current_percent = int(self.train_params.get('epsilon_current_percent', 20))
             prev_current = current_percent
