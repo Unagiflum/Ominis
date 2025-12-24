@@ -329,7 +329,7 @@ class MonteCarloAgent:
         """
         reward = 0.0
 
-        reward += 0.75 * lines_cleared
+        reward += 0.25 * lines_cleared
 
         if hole_delta < 0:
             reward -= 0.45 * hole_delta
