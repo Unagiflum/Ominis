@@ -16,6 +16,9 @@ class MonteCarloAgent:
     2. Computes a single scalar Monte Carlo return R_piece at the end
     3. Trains Q(s, a) to predict R_piece for all (state, action) pairs in the trajectory
     """
+    EPSILON_MAX_PERCENT = 25.0
+    EPSILON_STEP_PERCENT = 0.5
+
     def __init__(self, train_params):
         self.params = train_params
         
@@ -24,12 +27,13 @@ class MonteCarloAgent:
         self.gamma = 1.0 # Discount factor (fixed)
         self.params['gamma'] = 1.0
         self.epsilon = 0.7 # Initial exploration rate
-        epsilon_min_percent = self.params.get('epsilon_min_percent', 5)
-        epsilon_min_percent = max(0, min(75, epsilon_min_percent))
+        epsilon_min_percent = self._snap_epsilon_percent(self.params.get('epsilon_min_percent', 5))
+        self.params['epsilon_min_percent'] = epsilon_min_percent
         self.epsilon_min = epsilon_min_percent / 100.0 # Minimum exploration rate (Default 5%)
         epsilon_current_percent = self.params.get('epsilon_current_percent')
         if epsilon_current_percent is not None:
-            epsilon_current_percent = max(0, min(75, epsilon_current_percent))
+            epsilon_current_percent = self._snap_epsilon_percent(epsilon_current_percent)
+            self.params['epsilon_current_percent'] = epsilon_current_percent
             self.epsilon = epsilon_current_percent / 100.0
         self.epsilon = max(self.epsilon, self.epsilon_min)
         self.epsilon_decay = 0.9997 # Decay per training step
@@ -131,6 +135,12 @@ class MonteCarloAgent:
                     f.write("Batch, Lines per Piece, Lines per Game\n")
             except Exception as e:
                 print(f"Error creating CSV file: {e}")
+
+    def _snap_epsilon_percent(self, value):
+        value = max(0.0, min(self.EPSILON_MAX_PERCENT, float(value)))
+        step_count = int(round(value / self.EPSILON_STEP_PERCENT))
+        snapped = step_count * self.EPSILON_STEP_PERCENT
+        return max(0.0, min(self.EPSILON_MAX_PERCENT, snapped))
 
     def get_state(self, game):
         buffer_rows = 10
@@ -583,8 +593,8 @@ class MonteCarloAgent:
         """Update hyperparameters from self.params (which are shared with UI)."""
         self.gamma = 1.0
         self.params['gamma'] = 1.0
-        epsilon_min_percent = self.params.get('epsilon_min_percent', 5)
-        epsilon_min_percent = max(0, min(75, epsilon_min_percent))
+        epsilon_min_percent = self._snap_epsilon_percent(self.params.get('epsilon_min_percent', 5))
+        self.params['epsilon_min_percent'] = epsilon_min_percent
         self.epsilon_min = epsilon_min_percent / 100.0
         lr = self.params.get('learning_rate', 0.0001)
         lr = max(0.0001, min(0.005, lr))

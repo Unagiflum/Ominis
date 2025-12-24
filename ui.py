@@ -300,15 +300,19 @@ class UI:
         self.draw_group_box(padding, current_y, left_pane_width, reward_height, "Reward & Curriculum")
         
         sy = current_y + 35
-        # Current / Min Rand. % (0% - 75%)
+        # Current / Min Rand. % (0% - 25%)
+        epsilon_max = 25.0
+        epsilon_step = 0.5
         min_rand_raw = params.get('epsilon_min_percent', 5)
         current_rand_raw = params.get('epsilon_current_percent', 20)
-        min_rand = max(0, min(75, min_rand_raw))
-        current_rand = max(0, min(75, current_rand_raw))
+        min_rand = max(0.0, min(epsilon_max, float(min_rand_raw)))
+        current_rand = max(0.0, min(epsilon_max, float(current_rand_raw)))
+        min_rand = round(min_rand / epsilon_step) * epsilon_step
+        current_rand = round(current_rand / epsilon_step) * epsilon_step
         floor_rand = min(min_rand, current_rand)
         current_rand = max(min_rand, current_rand)
-        label = f"Randomness: {current_rand}%->{floor_rand}%"
-        s_rect = self.draw_range_slider(slider_x, sy, slider_width, floor_rand / 75.0, current_rand / 75.0, label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+        label = f"Randomness: {current_rand:g}%->{floor_rand:g}%"
+        s_rect = self.draw_range_slider(slider_x, sy, slider_width, floor_rand / epsilon_max, current_rand / epsilon_max, label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
         if not is_training: slider_rects['epsilon_range_percent'] = s_rect
         sy += 45
         

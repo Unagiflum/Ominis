@@ -8,6 +8,9 @@ from ui import UI
 from audio import AudioPlayer
 
 class Game:
+    EPSILON_MAX_PERCENT = 25.0
+    EPSILON_STEP_PERCENT = 0.5
+
     def __init__(self):
         self.screen_width = 635
         self.screen_height = 770
@@ -2117,9 +2120,15 @@ class Game:
         self.train_params['min_size'] = min_size
         self.train_params['max_size'] = max_size
 
+    def _snap_epsilon_percent(self, value):
+        value = max(0.0, min(self.EPSILON_MAX_PERCENT, float(value)))
+        step_count = int(round(value / self.EPSILON_STEP_PERCENT))
+        snapped = step_count * self.EPSILON_STEP_PERCENT
+        return max(0.0, min(self.EPSILON_MAX_PERCENT, snapped))
+
     def _apply_epsilon_range(self, min_percent, current_percent, apply_current=True):
-        min_percent = int(max(0, min(75, min_percent)))
-        current_percent = int(max(0, min(75, current_percent)))
+        min_percent = self._snap_epsilon_percent(min_percent)
+        current_percent = self._snap_epsilon_percent(current_percent)
         if min_percent > current_percent:
             min_percent, current_percent = current_percent, min_percent
         self.train_params['epsilon_min_percent'] = min_percent
@@ -2130,14 +2139,12 @@ class Game:
                 self.agent.epsilon = max(current_percent / 100.0, self.agent.epsilon_min)
 
     def _select_epsilon_handle(self, mouse_x, rect):
-        min_percent = int(self.train_params.get('epsilon_min_percent', 5))
-        current_percent = int(self.train_params.get('epsilon_current_percent', 20))
-        min_percent = max(0, min(75, min_percent))
-        current_percent = max(0, min(75, current_percent))
+        min_percent = self._snap_epsilon_percent(self.train_params.get('epsilon_min_percent', 5))
+        current_percent = self._snap_epsilon_percent(self.train_params.get('epsilon_current_percent', 20))
         floor_percent = min(min_percent, current_percent)
         current_percent = max(min_percent, current_percent)
-        floor_x = rect.x + (floor_percent / 75.0) * rect.width
-        current_x = rect.x + (current_percent / 75.0) * rect.width
+        floor_x = rect.x + (floor_percent / self.EPSILON_MAX_PERCENT) * rect.width
+        current_x = rect.x + (current_percent / self.EPSILON_MAX_PERCENT) * rect.width
         if floor_percent == current_percent:
             return 'current' if mouse_x >= current_x else 'min'
         if abs(mouse_x - floor_x) <= abs(mouse_x - current_x):
@@ -2177,11 +2184,10 @@ class Game:
             count = 1 + int(val * 3.99)
             self.train_params['hl_count'] = count
         elif self.active_slider == 'epsilon_range_percent':
-            # Map 0-1 to 0-75
-            val_percent = int(val * 75)
-            val_percent = max(0, min(75, val_percent))
-            min_percent = int(self.train_params.get('epsilon_min_percent', 5))
-            current_percent = int(self.train_params.get('epsilon_current_percent', 20))
+            # Map 0-1 to 0-25 in 0.5% steps
+            val_percent = self._snap_epsilon_percent(val * self.EPSILON_MAX_PERCENT)
+            min_percent = self.train_params.get('epsilon_min_percent', 5)
+            current_percent = self.train_params.get('epsilon_current_percent', 20)
             prev_current = current_percent
             handle = self.active_slider_handle
             if handle is None:
@@ -2193,7 +2199,7 @@ class Game:
                 current_percent = val_percent
             self._apply_epsilon_range(min_percent, current_percent)
             if handle == 'current':
-                new_current = int(self.train_params.get('epsilon_current_percent', prev_current))
+                new_current = self.train_params.get('epsilon_current_percent', prev_current)
                 if new_current != prev_current:
                     self.epsilon_override_pending = True
         elif self.active_slider == 'learning_rate':
