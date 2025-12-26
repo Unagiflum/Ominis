@@ -36,7 +36,7 @@ class MonteCarloAgent:
             self.params['epsilon_current_percent'] = epsilon_current_percent
             self.epsilon = epsilon_current_percent / 100.0
         self.epsilon = max(self.epsilon, self.epsilon_min)
-        self.epsilon_decay = 0.9997 # Decay per training step
+        self.epsilon_decay = 0.999977 # Decay per training step
         lr = self.params.get('learning_rate', 0.0001)
         # Clamp to UI-supported range
         lr = max(0.0001, min(0.005, lr))
