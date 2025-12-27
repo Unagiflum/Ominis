@@ -338,10 +338,10 @@ class MonteCarloAgent:
                 reward -= 0.50 * hole_delta
 
         if jaggedness_delta < 0:
-            reward -= 0.25 * jaggedness_delta
+            reward -= 0.10 * jaggedness_delta
         else:
             if jaggedness_delta > 0:
-                reward -= 0.30 * jaggedness_delta
+                reward -= 0.15 * jaggedness_delta
 
         return reward
 
