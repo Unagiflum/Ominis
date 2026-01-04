@@ -438,6 +438,18 @@ class Game:
         # Drop 50ms per level starting at 17, but never below 50ms
         return max(50, 250 - 50 * (self.level - 16))
 
+    def _get_advance_interval_ms(self, state_override=None):
+        state = state_override or self.state
+        if state == "WATCH_AI":
+            return self.get_watch_ai_fall_speed()
+        if state == "TRAINING":
+            return 50
+        if state == "PLAYING":
+            if self.input_manager.is_down_held():
+                return 80
+            return self.fall_speed
+        return self.fall_speed
+
     def _analyze_grid(self, grid_cells):
         """Return (max_height, holes, jaggedness) for a grid cell matrix."""
         heights = [0] * self.grid_width
@@ -1140,6 +1152,11 @@ class Game:
                 self.pre_anim_state = self.state # Save state to return to
                 self.state = "ANIMATING_CLEAR"
                 self.animation_timer = pygame.time.get_ticks()
+                # Scale animation timing to the current advance rate (baseline ~2x faster).
+                advance_ms = max(1.0, float(self._get_advance_interval_ms(self.pre_anim_state)))
+                self.anim_clear_ms = advance_ms * 0.1
+                drop_ms_per_line = advance_ms * 0.125
+                self.anim_drop_speed_px_per_ms = self.cell_size / max(1.0, drop_ms_per_line)
                 self.audio.play_clear()
                 return True
         return False
@@ -1624,25 +1641,27 @@ class Game:
                         return
                 
         elif self.state == "ANIMATING_CLEAR":
-            if current_time - self.animation_timer > 200: # 200ms flash
+            clear_ms = getattr(self, "anim_clear_ms", 200)
+            if current_time - self.animation_timer > clear_ms:
                 self.apply_line_clears()
                 self.state = "ANIMATING_DROP"
                 self.animation_timer = current_time
+                self.drop_anim_last_time = current_time
                 
         elif self.state == "ANIMATING_DROP":
             # Reduce offsets
             all_done = True
-            drop_speed = 2 # Pixels per frame
+            drop_speed = getattr(self, "anim_drop_speed_px_per_ms", (self.cell_size / 125.0))
+            last_time = getattr(self, "drop_anim_last_time", current_time)
+            dt_ms = max(0, current_time - last_time)
+            self.drop_anim_last_time = current_time
+            delta = drop_speed * dt_ms
             for i in range(self.grid_height):
                 if self.row_offsets[i] < 0:
-                    self.row_offsets[i] += drop_speed
-                    if self.row_offsets[i] > 0:
-                        self.row_offsets[i] = 0
+                    self.row_offsets[i] = min(0, self.row_offsets[i] + delta)
                     all_done = False
                 elif self.row_offsets[i] > 0: # Should not happen with drop
-                    self.row_offsets[i] -= drop_speed
-                    if self.row_offsets[i] < 0:
-                        self.row_offsets[i] = 0
+                    self.row_offsets[i] = max(0, self.row_offsets[i] - delta)
                     all_done = False
             
             if all_done:
