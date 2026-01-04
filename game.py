@@ -10,6 +10,10 @@ from audio import AudioPlayer
 class Game:
     EPSILON_MAX_PERCENT = 25.0
     EPSILON_STEP_PERCENT = 0.5
+    EPSILON_HALF_LIFE_MIN_EXP = 2.0
+    EPSILON_HALF_LIFE_MAX_EXP = 7.0
+    EPSILON_HALF_LIFE_STEP_EXP = 0.5
+    EPSILON_HALF_LIFE_STEPS = int((EPSILON_HALF_LIFE_MAX_EXP - EPSILON_HALF_LIFE_MIN_EXP) / EPSILON_HALF_LIFE_STEP_EXP)
 
     def __init__(self):
         self.screen_width = 635
@@ -114,6 +118,7 @@ class Game:
             'hl_count': 2,
             'epsilon_min_percent': 5,
             'epsilon_current_percent': 20,
+            'epsilon_half_life_batches': int(round(10 ** 4.5)),
             'learning_rate': 0.001,
             'min_size': 1,
             'max_size': 5,
@@ -260,6 +265,9 @@ class Game:
             self.train_params.get('epsilon_min_percent', 5),
             self.train_params.get('epsilon_current_percent', 20),
             apply_current=False
+        )
+        self.train_params['epsilon_half_life_batches'] = self._snap_epsilon_half_life(
+            self.train_params.get('epsilon_half_life_batches', 10 ** 4.5)
         )
         return True
 
@@ -2143,6 +2151,22 @@ class Game:
         self.train_params['min_size'] = min_size
         self.train_params['max_size'] = max_size
 
+    def _snap_epsilon_half_life(self, value):
+        default_exp = 4.5
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            value = 10 ** default_exp
+        min_value = 10 ** self.EPSILON_HALF_LIFE_MIN_EXP
+        max_value = 10 ** self.EPSILON_HALF_LIFE_MAX_EXP
+        value = max(min_value, min(max_value, value))
+        exp = math.log10(value)
+        exp = max(self.EPSILON_HALF_LIFE_MIN_EXP, min(self.EPSILON_HALF_LIFE_MAX_EXP, exp))
+        step_count = int(round((exp - self.EPSILON_HALF_LIFE_MIN_EXP) / self.EPSILON_HALF_LIFE_STEP_EXP))
+        step_count = max(0, min(self.EPSILON_HALF_LIFE_STEPS, step_count))
+        snapped_exp = self.EPSILON_HALF_LIFE_MIN_EXP + step_count * self.EPSILON_HALF_LIFE_STEP_EXP
+        return int(round(10 ** snapped_exp))
+
     def _snap_epsilon_percent(self, value):
         value = max(0.0, min(self.EPSILON_MAX_PERCENT, float(value)))
         step_count = int(round(value / self.EPSILON_STEP_PERCENT))
@@ -2225,6 +2249,14 @@ class Game:
                 new_current = self.train_params.get('epsilon_current_percent', prev_current)
                 if new_current != prev_current:
                     self.epsilon_override_pending = True
+        elif self.active_slider == 'epsilon_half_life_batches':
+            step_count = int(val * self.EPSILON_HALF_LIFE_STEPS + 0.5)
+            step_count = max(0, min(self.EPSILON_HALF_LIFE_STEPS, step_count))
+            exp = self.EPSILON_HALF_LIFE_MIN_EXP + step_count * self.EPSILON_HALF_LIFE_STEP_EXP
+            half_life = int(round(10 ** exp))
+            self.train_params['epsilon_half_life_batches'] = half_life
+            if self.agent:
+                self.agent.update_hyperparameters()
         elif self.active_slider == 'learning_rate':
             # Map 0-1 to 0.0001 - 0.0050
             lr = 0.0001 + (val * 0.0049)

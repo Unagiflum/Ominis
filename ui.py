@@ -263,10 +263,10 @@ class UI:
         title = self.large_font.render("TRAIN AI", True, self.text_color)
         self.screen.blit(title, (padding, padding))
         
-        current_y = padding + 60
+        current_y = padding + 45
         
         # --- Architecture Group ---
-        arch_height = 160
+        arch_height = 145
         self.draw_group_box(padding, current_y, left_pane_width, arch_height, "Architecture")
         
         # Hidden Layer Size (128, 256, 512, 1024, 2048)
@@ -284,19 +284,19 @@ class UI:
         # Hidden Layer Size
         s_rect = self.draw_slider(slider_x, sy, slider_width, hl_size_idx / max_hl_idx, f"Hidden Size: {hl_size_val}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
         if not is_training: slider_rects['hl_size'] = s_rect
-        sy += 50
+        sy += 40
         
         # Hidden Layer Count (1, 2, 3, 4)
         s_rect = self.draw_slider(slider_x, sy, slider_width, (params['hl_count'] - 1) / 3.0, f"Hidden Layers: {params['hl_count']}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
         if not is_training: slider_rects['hl_count'] = s_rect
         
-        dropdown_rect = pygame.Rect(slider_x, sy + 30, slider_width, 25)
+        dropdown_rect = pygame.Rect(slider_x, sy + 25, slider_width, 25)
 
         
-        current_y += arch_height + 20
+        current_y += arch_height + 15
         
         # --- Reward / Curriculum Group ---
-        reward_height = 270
+        reward_height = 315
         self.draw_group_box(padding, current_y, left_pane_width, reward_height, "Reward & Curriculum")
         
         sy = current_y + 35
@@ -314,6 +314,24 @@ class UI:
         label = f"Randomness: {current_rand:g}%->{floor_rand:g}%"
         s_rect = self.draw_range_slider(slider_x, sy, slider_width, floor_rand / epsilon_max, current_rand / epsilon_max, label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
         if not is_training: slider_rects['epsilon_range_percent'] = s_rect
+        sy += 45
+
+        # Randomness Half-life (10^2 - 10^7 in half-powers)
+        half_life_raw = params.get('epsilon_half_life_batches', 10 ** 4.5)
+        try:
+            half_life = float(half_life_raw)
+        except (TypeError, ValueError):
+            half_life = 10 ** 4.5
+        half_life = max(1e2, min(1e7, half_life))
+        exp = math.log10(half_life)
+        exp = max(2.0, min(7.0, exp))
+        step_count = int(round((exp - 2.0) / 0.5))
+        step_count = max(0, min(10, step_count))
+        snapped_exp = 2.0 + step_count * 0.5
+        exp_label = f"{snapped_exp:.1f}"
+        label = f"Rand. half-life: 10^{exp_label}"
+        s_rect = self.draw_slider(slider_x, sy, slider_width, step_count / 10.0, label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+        if not is_training: slider_rects['epsilon_half_life_batches'] = s_rect
         sy += 45
         
         # Learning Rate (0.0001 - 0.0050)
@@ -372,13 +390,13 @@ class UI:
         bottom_y -= button_height + button_gap
         
         # Visual Mode Checkbox
-        chk_rect = self.draw_checkbox(padding, bottom_y, params['visual_mode'], "Visual Mode", mouse_pos)
+        chk_rect = self.draw_checkbox(padding, bottom_y + 10, params['visual_mode'], "Visual Mode", mouse_pos)
         bottom_y -= 30
 
         # Volume Slider
         # Only relevant if visual mode is on? Or always show? User said "need not do anything when visual mode is off".
         # Let's show it always for consistency.
-        vol_slider_rect = self.draw_slider(padding + 10, bottom_y, 150, volume, "Volume", mouse_pos, self.small_font, bar_offset_y=slider_bar_offset)
+        vol_slider_rect = self.draw_slider(padding + 10, bottom_y + 15, 150, volume, "Volume", mouse_pos, self.small_font, bar_offset_y=slider_bar_offset)
         
         # Draw Game Board on Right
         offset_x = left_pane_width + padding * 2

@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import copy
 import random
 import numpy as np
+import math
 from collections import deque
 from model import OminisNet
 
@@ -18,6 +19,10 @@ class MonteCarloAgent:
     """
     EPSILON_MAX_PERCENT = 25.0
     EPSILON_STEP_PERCENT = 0.5
+    EPSILON_HALF_LIFE_MIN_EXP = 2.0
+    EPSILON_HALF_LIFE_MAX_EXP = 7.0
+    EPSILON_HALF_LIFE_STEP_EXP = 0.5
+    EPSILON_HALF_LIFE_STEPS = int((EPSILON_HALF_LIFE_MAX_EXP - EPSILON_HALF_LIFE_MIN_EXP) / EPSILON_HALF_LIFE_STEP_EXP)
 
     def __init__(self, train_params):
         self.params = train_params
@@ -36,7 +41,9 @@ class MonteCarloAgent:
             self.params['epsilon_current_percent'] = epsilon_current_percent
             self.epsilon = epsilon_current_percent / 100.0
         self.epsilon = max(self.epsilon, self.epsilon_min)
-        self.epsilon_decay = 0.999977 # Decay per training step
+        half_life = self._snap_epsilon_half_life(self.params.get('epsilon_half_life_batches', 10 ** 4.5))
+        self.params['epsilon_half_life_batches'] = half_life
+        self.epsilon_decay = self._compute_epsilon_decay(half_life)
         lr = self.params.get('learning_rate', 0.0001)
         # Clamp to UI-supported range
         lr = max(0.0001, min(0.005, lr))
@@ -141,6 +148,26 @@ class MonteCarloAgent:
         step_count = int(round(value / self.EPSILON_STEP_PERCENT))
         snapped = step_count * self.EPSILON_STEP_PERCENT
         return max(0.0, min(self.EPSILON_MAX_PERCENT, snapped))
+
+    def _snap_epsilon_half_life(self, value):
+        default_exp = 4.5
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            value = 10 ** default_exp
+        min_value = 10 ** self.EPSILON_HALF_LIFE_MIN_EXP
+        max_value = 10 ** self.EPSILON_HALF_LIFE_MAX_EXP
+        value = max(min_value, min(max_value, value))
+        exp = math.log10(value)
+        exp = max(self.EPSILON_HALF_LIFE_MIN_EXP, min(self.EPSILON_HALF_LIFE_MAX_EXP, exp))
+        step_count = int(round((exp - self.EPSILON_HALF_LIFE_MIN_EXP) / self.EPSILON_HALF_LIFE_STEP_EXP))
+        step_count = max(0, min(self.EPSILON_HALF_LIFE_STEPS, step_count))
+        snapped_exp = self.EPSILON_HALF_LIFE_MIN_EXP + step_count * self.EPSILON_HALF_LIFE_STEP_EXP
+        return int(round(10 ** snapped_exp))
+
+    def _compute_epsilon_decay(self, half_life_batches):
+        half_life_batches = max(1.0, float(half_life_batches))
+        return 10 ** (math.log10(0.5) / half_life_batches)
 
     def get_state(self, game):
         buffer_rows = 10
@@ -599,6 +626,9 @@ class MonteCarloAgent:
         epsilon_min_percent = self._snap_epsilon_percent(self.params.get('epsilon_min_percent', 5))
         self.params['epsilon_min_percent'] = epsilon_min_percent
         self.epsilon_min = epsilon_min_percent / 100.0
+        half_life = self._snap_epsilon_half_life(self.params.get('epsilon_half_life_batches', 10 ** 4.5))
+        self.params['epsilon_half_life_batches'] = half_life
+        self.epsilon_decay = self._compute_epsilon_decay(half_life)
         lr = self.params.get('learning_rate', 0.0001)
         lr = max(0.0001, min(0.005, lr))
         self.learning_rate = lr
