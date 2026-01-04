@@ -476,9 +476,12 @@ class MonteCarloAgent:
         # Flip spatial channels horizontally (width axis)
         mirrored_grid = np.flip(np.array(grid_input), axis=2).copy()
 
-        # Next piece is flattened 10x10; flip horizontally and flatten again
+        # Next piece is flattened 10x10; flip around the x=5 origin (not the 4.5 grid center).
         next_piece_grid = np.array(next_piece_input).reshape(10, 10)
-        mirrored_next_piece = np.flip(next_piece_grid, axis=1).reshape(-1).astype(np.float32)
+        flipped_next_piece = np.flip(next_piece_grid, axis=1)
+        mirrored_next_piece_grid = np.zeros_like(flipped_next_piece)
+        mirrored_next_piece_grid[:, 1:] = flipped_next_piece[:, :-1]
+        mirrored_next_piece = mirrored_next_piece_grid.reshape(-1).astype(np.float32)
 
         # Decode action, mirror, and re-encode
         lateral_idx, rotation_idx = self.decode_action(action_idx)
