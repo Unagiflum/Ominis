@@ -141,7 +141,7 @@ class Game:
         self.training_step_count = 0
         self.current_trajectory = [] # Buffer for current piece's moves
         self.piece_history = deque() # Pending piece trajectories for delayed rewards
-        self.start_stats = (0, 0, 0) # (Height, Holes, Jaggedness) at start of piece
+        self.start_stats = (0, 0, 0, 0) # (Height, Holes, Jaggedness, Valleys) at start of piece
         self.last_save_time = 0 # Track last auto-save time
         
         # Pending reward application for visual-mode line clear animation
@@ -459,7 +459,7 @@ class Game:
         return self.fall_speed
 
     def _analyze_grid(self, grid_cells):
-        """Return (max_height, holes, jaggedness) for a grid cell matrix."""
+        """Return (max_height, holes, jaggedness, valleys) for a grid cell matrix."""
         heights = [0] * self.grid_width
         holes = 0
 
@@ -483,11 +483,24 @@ class Game:
         for x in range(self.grid_width - 1):
             jaggedness += abs(heights[x] - heights[x + 1])
 
+        valleys = 0
+        if self.grid_width > 1:
+            for x in range(self.grid_width):
+                if x == 0:
+                    min_neighbor = heights[1]
+                elif x == self.grid_width - 1:
+                    min_neighbor = heights[self.grid_width - 2]
+                else:
+                    min_neighbor = min(heights[x - 1], heights[x + 1])
+                depth = min_neighbor - heights[x]
+                if depth >= 3:
+                    valleys += depth - 2
+
         max_height = max(heights) if heights else 0
-        return max_height, holes, jaggedness
+        return max_height, holes, jaggedness, valleys
 
     def get_grid_stats(self):
-        """Returns (max_height, holes, jaggedness) for the current grid."""
+        """Returns (max_height, holes, jaggedness, valleys) for the current grid."""
         return self._analyze_grid(self.grid.grid)
     
     def get_lowest_column_height(self):
@@ -512,7 +525,7 @@ class Game:
     def get_post_clear_grid_stats(self, clearing_lines):
         """
         Simulates line clearing on a temporary grid to calculate post-clear stats.
-        Returns: (simulated_height, simulated_holes, simulated_jaggedness)
+        Returns: (simulated_height, simulated_holes, simulated_jaggedness, simulated_valleys)
         """
         if not clearing_lines:
             return self.get_grid_stats()
@@ -1429,7 +1442,7 @@ class Game:
         piece_before = self.current_piece
         lines_before = self.lines_cleared_total
         # Capture stats locally to ensure fresh data for reward calculation
-        _, holes_before_step, jaggedness_before = self.get_grid_stats()
+        _, holes_before_step, jaggedness_before, valleys_before = self.get_grid_stats()
         
         # Reset clearing lines flag for Headless detection
         self.clearing_lines = []
@@ -1482,9 +1495,10 @@ class Game:
                         clearing_lines.append(y)
 
             # Post-clear stats on simulated grid
-            _, holes_after, jaggedness_after = self.get_post_clear_grid_stats(clearing_lines)
+            _, holes_after, jaggedness_after, valleys_after = self.get_post_clear_grid_stats(clearing_lines)
             hole_delta = holes_after - holes_before_step
             jaggedness_delta = jaggedness_after - jaggedness_before
+            valley_delta = valleys_after - valleys_before
 
             is_game_over = (self.state == "GAMEOVER")
             
@@ -1492,7 +1506,8 @@ class Game:
             reward = self.agent.calculate_reward(
                 lines_cleared,
                 hole_delta,
-                jaggedness_delta
+                jaggedness_delta,
+                valley_delta
             )
 
             # Apply reward to this piece's trajectory

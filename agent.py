@@ -339,7 +339,7 @@ class MonteCarloAgent:
         """Encode (lateral_idx, rotation_idx) to joint action index."""
         return lateral_idx * 3 + rotation_idx
 
-    def calculate_reward(self, lines_cleared, hole_delta, jaggedness_delta):
+    def calculate_reward(self, lines_cleared, hole_delta, jaggedness_delta, valley_delta):
         """
         Calculate reward for a piece placement using post-clear board state.
 
@@ -347,6 +347,7 @@ class MonteCarloAgent:
             lines_cleared: Lines cleared by the placement
             hole_delta: holes_after - holes_before (post-clear vs pre-lock)
             jaggedness_delta: jaggedness_after - jaggedness_before (post-clear vs pre-lock)
+            valley_delta: valleys_after - valleys_before (post-clear vs pre-lock)
 
         Returns:
             Total reward for this piece placement (game over penalty applied elsewhere)
@@ -354,21 +355,27 @@ class MonteCarloAgent:
         Game over penalty of 2.0 is applied in game.py. Scale rewards here accordingly            
 
         """
-        reward = 0.0
+        reward = 0.00
 
-        reward += 0.25 * lines_cleared
+        reward += 0.100 * lines_cleared
 
         if hole_delta < 0:
-            reward -= 0.45 * hole_delta
+            reward -= 0.450 * hole_delta
         else:
             if hole_delta > 0:
-                reward -= 0.50 * hole_delta
+                reward -= 0.500 * hole_delta
 
         if jaggedness_delta < 0:
-            reward -= 0.05 * jaggedness_delta
+            reward -= 0.050 * jaggedness_delta
         else:
             if jaggedness_delta > 0:
                 reward -= 0.075 * jaggedness_delta
+
+        if valley_delta < 0:
+            reward -= 0.075 * valley_delta
+        else:
+            if valley_delta > 0:
+                reward -= 0.100 * valley_delta
 
         return reward
 
