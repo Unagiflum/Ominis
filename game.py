@@ -1549,8 +1549,12 @@ class Game:
 
         self.audio.update()
         
-        # Update music speed based on the active fall speed (human or watch AI)
-        effective_fall_speed = self.get_watch_ai_fall_speed() if self.state == "WATCH_AI" else self.fall_speed
+        # Update music speed based on the active fall speed (human or watch AI).
+        # Preserve the source state during line-clear animations so watch tempo doesn't drop.
+        tempo_state = self.state
+        if self.state in ("ANIMATING_CLEAR", "ANIMATING_DROP") and hasattr(self, 'pre_anim_state'):
+            tempo_state = self.pre_anim_state
+        effective_fall_speed = self.get_watch_ai_fall_speed() if tempo_state == "WATCH_AI" else self.fall_speed
         ratio = (1000 / max(50, effective_fall_speed)) ** 0.25
         self.audio.set_speed(ratio)
 
