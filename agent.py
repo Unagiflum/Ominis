@@ -357,7 +357,7 @@ class MonteCarloAgent:
         """
         reward = 0.00
 
-        reward += 0.100 * lines_cleared
+        reward += 0.075 * lines_cleared
 
         if hole_delta < 0:
             reward -= 0.450 * hole_delta
@@ -372,10 +372,10 @@ class MonteCarloAgent:
                 reward -= 0.075 * jaggedness_delta
 
         if valley_delta < 0:
-            reward -= 0.075 * valley_delta
+            reward -= 0.050 * valley_delta
         else:
             if valley_delta > 0:
-                reward -= 0.100 * valley_delta
+                reward -= 0.075 * valley_delta
 
         return reward
 
