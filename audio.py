@@ -22,13 +22,13 @@ class MidiThread(threading.Thread):
         try:
             mid = mido.MidiFile(self.filename)
             
-            # Send initial volume
-            self.update_volume()
             # Ensure synth is in a known state (GM reset)
             try:
                 self.midi_out.write_sys_ex(pygame.midi.time(), bytes([0xF0, 0x7E, 0x7F, 0x09, 0x01, 0xF7]))
             except Exception:
                 pass
+            # Send initial volume (after GM reset to avoid being overwritten)
+            self.update_volume()
 
             start_time = time.time()
             input_time = 0.0
