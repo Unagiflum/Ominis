@@ -6,6 +6,10 @@ import threading
 import time
 import mido
 
+GM_RESET_SYSEX = bytes([0xF0, 0x7E, 0x7F, 0x09, 0x01, 0xF7])
+GS_RESET_SYSEX = bytes([0xF0, 0x41, 0x10, 0x42, 0x12, 0x40, 0x00, 0x7F, 0x00, 0x41, 0xF7])
+XG_RESET_SYSEX = bytes([0xF0, 0x43, 0x10, 0x4C, 0x00, 0x00, 0x7E, 0x00, 0xF7])
+
 class MidiThread(threading.Thread):
     def __init__(self, filename, midi_out):
         super().__init__()
@@ -17,6 +21,9 @@ class MidiThread(threading.Thread):
         self.speed_factor = 1.0
         self.volume = 0.7
         self.daemon = True
+
+    def _is_reset_sysex(self, data):
+        return data in (GM_RESET_SYSEX, GS_RESET_SYSEX, XG_RESET_SYSEX)
 
     def run(self):
         try:
@@ -55,7 +62,11 @@ class MidiThread(threading.Thread):
                     # Forward SysEx/bank messages so custom patches are preserved
                     if msg.type == "sysex":
                         try:
-                            self.midi_out.write_sys_ex(pygame.midi.time(), msg.bin())
+                            data = bytes(msg.bin())
+                            self.midi_out.write_sys_ex(pygame.midi.time(), data)
+                            # Reapply user volume after MIDI reset SysEx (GM/GS/XG).
+                            if self._is_reset_sysex(data):
+                                self.update_volume()
                         except Exception:
                             pass
                     else:
@@ -64,8 +75,13 @@ class MidiThread(threading.Thread):
                             # Filter out CC7 (Channel Volume) - 0xBn 0x07 value
                             # This prevents MIDI files from overriding user volume
                             status = b[0] & 0xF0
-                            if status == 0xB0 and b[1] == 7:
-                                pass  # Skip CC7 messages
+                            if status == 0xB0:
+                                if b[1] == 7:
+                                    pass  # Skip CC7 messages
+                                else:
+                                    self.midi_out.write_short(b[0], b[1], b[2])
+                                    if b[1] == 121:
+                                        self.update_volume()
                             else:
                                 self.midi_out.write_short(b[0], b[1], b[2])
                         elif len(b) == 2:
