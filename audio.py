@@ -61,7 +61,13 @@ class MidiThread(threading.Thread):
                     else:
                         b = msg.bytes()
                         if len(b) == 3:
-                            self.midi_out.write_short(b[0], b[1], b[2])
+                            # Filter out CC7 (Channel Volume) - 0xBn 0x07 value
+                            # This prevents MIDI files from overriding user volume
+                            status = b[0] & 0xF0
+                            if status == 0xB0 and b[1] == 7:
+                                pass  # Skip CC7 messages
+                            else:
+                                self.midi_out.write_short(b[0], b[1], b[2])
                         elif len(b) == 2:
                             self.midi_out.write_short(b[0], b[1])
                         
