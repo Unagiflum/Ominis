@@ -6,3 +6,5 @@ models/*
 !models/.gitkeep
 progress/*.csv
 settings.json
+Video/
+recording.json

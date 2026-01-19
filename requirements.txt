@@ -3,3 +3,6 @@ mido
 torch
 torchvision
 torchaudio
+numpy
+sounddevice>=0.4.6
+av

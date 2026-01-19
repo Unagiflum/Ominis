@@ -107,6 +107,19 @@ class Game:
         self.save_name_text = ""
         self.save_name_rect = None
         self.save_name_limit = 32
+
+        self.record_name_active = False
+        self.record_name_text = ""
+        self.record_name_rect = None
+        self.record_name_limit = 32
+        self.recording_temp_path = None
+        self.recorder = None
+        self.is_recording = False
+        self.record_failed = False
+        self.btn_record_rect = None
+        self.record_audio_device = None
+        self.record_audio_device_name = None
+        self.record_audio_loopback = True
         
         # Architecture UI
         self.hl_sizes = [128, 256, 512, 1024, 2048]
@@ -151,6 +164,7 @@ class Game:
         self.short_games_move_count = 0
         
         self.load_settings()
+        self.load_recording_settings()
         # Ensure hidden size index stays within the available architecture options
         self.train_params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, int(self.train_params.get('hl_size_idx', 1))))
         self.train_params['gamma'] = 1.0
@@ -184,6 +198,40 @@ class Game:
                     print("Loaded settings from settings.json")
             except Exception as e:
                 print(f"Failed to load settings: {e}")
+
+    def load_recording_settings(self):
+        import json
+        import os
+        self.record_audio_device = None
+        self.record_audio_device_name = None
+        self.record_audio_loopback = True
+        if os.path.exists("recording.json"):
+            try:
+                with open("recording.json", "r") as f:
+                    data = json.load(f)
+                device = data.get("audio_device")
+                if device is not None and device != "":
+                    try:
+                        self.record_audio_device = int(device)
+                    except (TypeError, ValueError):
+                        print("Recording setting audio_device is not a number.")
+                name = data.get("audio_device_name")
+                if isinstance(name, str) and name.strip():
+                    self.record_audio_device_name = name.strip()
+                loopback = data.get("audio_loopback")
+                if loopback is not None:
+                    if isinstance(loopback, str):
+                        lowered = loopback.strip().lower()
+                        if lowered in ("true", "1", "yes", "y"):
+                            self.record_audio_loopback = True
+                        elif lowered in ("false", "0", "no", "n"):
+                            self.record_audio_loopback = False
+                        else:
+                            print("Recording setting audio_loopback is not valid.")
+                    else:
+                        self.record_audio_loopback = bool(loopback)
+            except Exception as e:
+                print(f"Failed to load recording settings: {e}")
 
     def create_agent(self, params_override=None):
         """Lazily import and build the AI agent so the game can start without PyTorch installed."""
@@ -426,6 +474,184 @@ class Game:
         except Exception as e:
             print(f"Failed to save model {path}: {e}")
             return False
+
+    def _ensure_video_dir(self):
+        import os
+        video_dir = "Video"
+        if not os.path.exists(video_dir):
+            os.makedirs(video_dir)
+        return video_dir
+
+    def _unique_path(self, path):
+        import os
+        if not os.path.exists(path):
+            return path
+        base, ext = os.path.splitext(path)
+        idx = 1
+        while True:
+            candidate = f"{base}-{idx}{ext}"
+            if not os.path.exists(candidate):
+                return candidate
+            idx += 1
+
+    def _normalize_recording_filename(self, name):
+        if not name:
+            return None
+        trimmed = name.strip()
+        if not trimmed:
+            return None
+        safe_chars = [ch for ch in trimmed if self._is_valid_model_char(ch)]
+        safe_name = "".join(safe_chars).strip(" .")
+        if not safe_name:
+            return None
+        if not safe_name.lower().endswith(".mp4"):
+            safe_name += ".mp4"
+        return safe_name
+
+    def _is_watch_game_active(self):
+        if self.state == "WATCH_AI":
+            return True
+        if self.state == "PAUSED" and getattr(self, "last_state", None) == "WATCH_AI":
+            return True
+        if self.state in ("ANIMATING_CLEAR", "ANIMATING_DROP") and getattr(self, "pre_anim_state", None) == "WATCH_AI":
+            return True
+        return False
+
+    def start_recording(self):
+        if self.is_recording or not self._is_watch_game_active():
+            return False
+        try:
+            from recorder import VideoRecorder, RecorderError
+        except Exception as exc:
+            print(f"Recording unavailable: {exc}")
+            return False
+
+        import time
+        video_dir = self._ensure_video_dir()
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        temp_name = f"recording-{timestamp}.mp4"
+        import os
+        temp_path = self._unique_path(os.path.join(video_dir, temp_name))
+
+        self.load_recording_settings()
+        recorder = VideoRecorder(
+            self.screen_width,
+            self.screen_height,
+            60,
+            want_audio=True,
+            audio_device=self.record_audio_device,
+            audio_device_name=self.record_audio_device_name,
+            audio_loopback=self.record_audio_loopback,
+        )
+        try:
+            recorder.start(temp_path)
+        except RecorderError as exc:
+            print(f"Recording failed: {exc}")
+            return False
+        except Exception as exc:
+            print(f"Recording failed: {exc}")
+            return False
+
+        self.recorder = recorder
+        self.is_recording = True
+        self.record_failed = False
+        self.recording_temp_path = temp_path
+        if not recorder.audio_enabled:
+            detail = recorder.audio_error or "audio capture unavailable"
+            print(f"Recording started (video only): {detail}")
+        else:
+            if recorder.audio_device_label:
+                mode = "loopback" if recorder.audio_loopback_active else "input"
+                print(f"Recording started: {temp_path} (audio {mode}: {recorder.audio_device_label})")
+            else:
+                print(f"Recording started: {temp_path}")
+        return True
+
+    def _discard_recording_temp(self, reason=None):
+        import os
+        if self.recording_temp_path:
+            try:
+                os.remove(self.recording_temp_path)
+            except Exception:
+                pass
+            if reason:
+                print(reason)
+        self.recording_temp_path = None
+        self.record_name_active = False
+        self.record_name_text = ""
+        self.record_name_rect = None
+        self.record_failed = False
+
+    def stop_recording(self, prompt_name=True):
+        if not self.is_recording or not self.recorder:
+            return
+        finalize_failed = False
+        try:
+            self.recorder.stop()
+        except Exception as exc:
+            print(f"Failed to finalize recording: {exc}")
+            finalize_failed = True
+        self.recorder = None
+        self.is_recording = False
+
+        if finalize_failed:
+            self.record_failed = True
+
+        if self.record_failed:
+            self._discard_recording_temp("Recording discarded due to errors.")
+            return
+
+        if prompt_name and self.recording_temp_path:
+            self.record_name_active = True
+            self.record_name_text = ""
+        else:
+            if self.recording_temp_path:
+                print(f"Recording saved ({self.recording_temp_path}).")
+            self.recording_temp_path = None
+            self.record_name_active = False
+            self.record_name_text = ""
+            self.record_name_rect = None
+
+    def save_named_recording(self, name):
+        import os
+        if not self.recording_temp_path:
+            print("No recording to save.")
+            return False
+        filename = self._normalize_recording_filename(name)
+        if not filename:
+            print("Recording name is empty.")
+            return False
+        video_dir = self._ensure_video_dir()
+        path = self._unique_path(os.path.join(video_dir, filename))
+        try:
+            os.replace(self.recording_temp_path, path)
+            print(f"Recording saved ({path}).")
+            self.recording_temp_path = None
+            self.record_failed = False
+            return True
+        except Exception as exc:
+            print(f"Failed to save recording {path}: {exc}")
+            return False
+
+    def cancel_recording_name(self):
+        if self.recording_temp_path:
+            print(f"Recording kept ({self.recording_temp_path}).")
+        self.recording_temp_path = None
+        self.record_name_active = False
+        self.record_name_text = ""
+        self.record_name_rect = None
+        self.record_failed = False
+
+    def capture_recording_frame(self):
+        if not self.is_recording or not self.recorder:
+            return
+        try:
+            frame = pygame.surfarray.array3d(self.screen)
+            self.recorder.write_frame(frame)
+        except Exception as exc:
+            print(f"Recording failed: {exc}")
+            self.record_failed = True
+            self.stop_recording(prompt_name=False)
 
     def get_short_game_length(self):
         """Get the number of pieces for a short game (1-20)."""
@@ -744,6 +970,26 @@ class Game:
             if event.type == pygame.QUIT:
                 return False
 
+            if self.record_name_active:
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RETURN:
+                        if self.save_named_recording(self.record_name_text):
+                            self.record_name_active = False
+                            self.record_name_text = ""
+                    elif event.key == pygame.K_ESCAPE:
+                        self.cancel_recording_name()
+                    elif event.key == pygame.K_BACKSPACE:
+                        self.record_name_text = self.record_name_text[:-1]
+                    elif event.unicode and self._is_valid_model_char(event.unicode):
+                        if len(self.record_name_text) < self.record_name_limit:
+                            self.record_name_text += event.unicode
+                    continue
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    if self.record_name_rect and not self.record_name_rect.collidepoint(event.pos):
+                        self.cancel_recording_name()
+                    continue
+                continue
+
             if self.save_name_active:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
@@ -775,6 +1021,8 @@ class Game:
                     self.save_settings()
 
                 if self.state in ["PLAYING", "PLAY_MENU", "GAMEOVER", "WATCH_AI", "WATCH_MENU", "TRAIN_MENU", "TRAINING"]:
+                    if self.is_recording:
+                        self.stop_recording(prompt_name=True)
                     if self.state in ["PLAYING", "PLAY_MENU", "GAMEOVER", "WATCH_AI", "WATCH_MENU"]:
                         self.clear_game_state()
                     self.state = "MENU"
@@ -979,10 +1227,19 @@ class Game:
                             continue
 
                         if self.btn_main_menu_rect and self.btn_main_menu_rect.collidepoint(mouse_pos):
+                            if self.is_recording:
+                                self.stop_recording(prompt_name=True)
                             self.clear_game_state()
                             self.state = "MENU"
                             self.audio.stop()
                             self.watch_dropdown_open = False
+                        elif self.btn_record_rect and self.btn_record_rect.collidepoint(mouse_pos):
+                            record_enabled = self._is_watch_game_active() or self.is_recording
+                            if record_enabled:
+                                if self.is_recording:
+                                    self.stop_recording(prompt_name=True)
+                                else:
+                                    self.start_recording()
                         elif self.btn_watch_start_rect and self.btn_watch_start_rect.collidepoint(mouse_pos):
                             start_active = self.watch_model_selected in self.watch_models
                             if start_active:
@@ -1280,6 +1537,8 @@ class Game:
             self.last_state = self.state
         self.state = "GAMEOVER"
         self.audio.stop()
+        if self.is_recording:
+            self.stop_recording(prompt_name=True)
 
     def _flush_piece_entry(self, entry):
         self.agent.add_trajectory_with_done(entry['trajectory'], entry['reward'])
@@ -1716,6 +1975,8 @@ class Game:
                         self.last_state = self.state
                     self.state = "GAMEOVER"
                     self.audio.stop()
+                    if self.is_recording:
+                        self.stop_recording(prompt_name=True)
                 
                 # Process pending reward even if game over happened after the clear
                 if was_training and self.pending_reward_event is not None:
@@ -2008,6 +2269,13 @@ class Game:
                 self.btn_watch_start_rect = None
             current_y = size_slider_y + 40 + section_gap
 
+            self.btn_record_rect = None
+            if watch_ui:
+                record_enabled = self._is_watch_game_active() or self.is_recording
+                record_label = "Stop" if self.is_recording else "Record"
+                self.btn_record_rect = self.ui.draw_button(left_pane_x + 30, current_y, 150, 34, record_label, record_enabled, mouse_pos, font=self.ui.small_font)
+                current_y += 34 + section_gap
+
             self.btn_main_menu_rect = self.ui.draw_button(left_pane_x + 30, current_y, 150, 34, "Main Menu", True, mouse_pos)
             
             # Grid Offset
@@ -2066,7 +2334,48 @@ class Game:
                 start_idx = scroll_offset
                 visible_models = self.watch_models[start_idx:start_idx + len(option_rects)]
                 self.watch_option_rects = list(zip(option_rects, visible_models))
-        
+
+        if self.record_name_active:
+            overlay = pygame.Surface((self.screen_width, self.screen_height))
+            overlay.set_alpha(180)
+            overlay.fill((0, 0, 0))
+            self.screen.blit(overlay, (0, 0))
+
+            panel_width = 320
+            panel_height = 140
+            panel_x = (self.screen_width - panel_width) // 2
+            panel_y = (self.screen_height - panel_height) // 2
+            panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+
+            pygame.draw.rect(self.screen, self.ui.bg_color, panel_rect, border_radius=10)
+            pygame.draw.rect(self.screen, self.ui.border_color, panel_rect, 2, border_radius=10)
+
+            title = self.ui.font.render("SAVE RECORDING", True, self.ui.text_color)
+            self.screen.blit(title, (panel_x + panel_width // 2 - title.get_width() // 2, panel_y + 12))
+
+            name_label = self.ui.small_font.render("Name", True, self.ui.text_color)
+            self.screen.blit(name_label, (panel_x + 20, panel_y + 52))
+
+            self.record_name_rect = self.ui.draw_text_input(
+                panel_x + 20,
+                panel_y + 70,
+                panel_width - 40,
+                28,
+                self.record_name_text,
+                "recording-name",
+                active=True,
+                mouse_pos=mouse_pos,
+                font=self.ui.small_font
+            )
+
+            hint = self.ui.small_font.render("Press Enter to save", True, (120, 120, 120))
+            self.screen.blit(hint, (panel_x + panel_width // 2 - hint.get_width() // 2, panel_y + panel_height - 26))
+        else:
+            self.record_name_rect = None
+
+        if self.is_recording:
+            self.capture_recording_frame()
+
         pygame.display.flip()
 
     def update_volume(self, mouse_x, is_train_slider=False):
@@ -2325,6 +2634,8 @@ class Game:
             else:
                 self.draw()
                 self.clock.tick(60)
-        
+
+        if self.is_recording:
+            self.stop_recording(prompt_name=False)
         self.audio.cleanup()
         pygame.quit()
