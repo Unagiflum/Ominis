@@ -469,27 +469,42 @@ class UI:
         
         return rect
 
-    def draw_button(self, x, y, width, height, label, active, mouse_pos=None, font=None):
+    def draw_button(self, x, y, width, height, label, active, mouse_pos=None, font=None, fill_color=None, text_color=None, border_color=None, hover_color=None, hover_text_color=None):
         rect = pygame.Rect(x, y, width, height)
         
         # Draw solid background first
-        pygame.draw.rect(self.screen, self.bg_color, rect, border_radius=10)
+        background = fill_color if fill_color is not None else self.bg_color
+        pygame.draw.rect(self.screen, background, rect, border_radius=10)
         
-        color = self.text_color if active else (100, 100, 100)
-        
+        if active:
+            base_text_color = text_color if text_color is not None else self.text_color
+            base_border_color = border_color if border_color is not None else base_text_color
+            hover_tint = self.accent_color if hover_color is None else hover_color
+            if hover_text_color is None:
+                hover_text_color = self.accent_color if text_color is None else base_text_color
+        else:
+            base_text_color = text_color if text_color is not None else (100, 100, 100)
+            base_border_color = border_color if border_color is not None else base_text_color
+            hover_tint = None
+            hover_text_color = base_text_color
+
+        draw_border_color = base_border_color
+        draw_text_color = base_text_color
+
         # Hover effect
         if active and mouse_pos and rect.collidepoint(mouse_pos):
-            color = self.accent_color
-            # Fill slightly
-            s = pygame.Surface((width, height))
-            s.set_alpha(50)
-            s.fill(color)
-            self.screen.blit(s, (x, y))
+            if hover_tint is not None:
+                s = pygame.Surface((width, height))
+                s.set_alpha(50)
+                s.fill(hover_tint)
+                self.screen.blit(s, (x, y))
+                draw_border_color = hover_tint
+            draw_text_color = hover_text_color
             
-        pygame.draw.rect(self.screen, color, rect, 2, border_radius=10)
+        pygame.draw.rect(self.screen, draw_border_color, rect, 2, border_radius=10)
         
         use_font = font if font else self.font
-        text = use_font.render(label, True, color)
+        text = use_font.render(label, True, draw_text_color)
         text_rect = text.get_rect(center=rect.center)
         self.screen.blit(text, text_rect)
         

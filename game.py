@@ -2269,14 +2269,40 @@ class Game:
                 self.btn_watch_start_rect = None
             current_y = size_slider_y + 40 + section_gap
 
+            button_y_offset = -20
             self.btn_record_rect = None
             if watch_ui:
                 record_enabled = self._is_watch_game_active() or self.is_recording
-                record_label = "Stop" if self.is_recording else "Record"
-                self.btn_record_rect = self.ui.draw_button(left_pane_x + 30, current_y, 150, 34, record_label, record_enabled, mouse_pos, font=self.ui.small_font)
+                record_label = "Stop Recording" if self.is_recording else "Record"
+                if self.is_recording:
+                    record_fill = (200, 50, 50)
+                    record_text = (245, 245, 245)
+                    record_border = (120, 20, 20)
+                else:
+                    record_fill = (60, 170, 70)
+                    record_text = (20, 45, 20)
+                    record_border = (30, 110, 40)
+                if not record_enabled:
+                    record_fill = (90, 90, 90)
+                    record_text = (210, 210, 210)
+                    record_border = (140, 140, 140)
+                self.btn_record_rect = self.ui.draw_button(
+                    left_pane_x + 30,
+                    current_y + button_y_offset,
+                    150,
+                    34,
+                    record_label,
+                    record_enabled,
+                    mouse_pos,
+                    font=self.ui.small_font,
+                    fill_color=record_fill,
+                    text_color=record_text,
+                    border_color=record_border,
+                    hover_color=record_border
+                )
                 current_y += 34 + section_gap
 
-            self.btn_main_menu_rect = self.ui.draw_button(left_pane_x + 30, current_y, 150, 34, "Main Menu", True, mouse_pos)
+            self.btn_main_menu_rect = self.ui.draw_button(left_pane_x + 30, current_y + button_y_offset, 150, 34, "Main Menu", True, mouse_pos)
             
             # Grid Offset
             offset_x = left_pane_x + 210 + padding
