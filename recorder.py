@@ -1,4 +1,5 @@
 import queue
+import sys
 import threading
 from fractions import Fraction
 
@@ -25,13 +26,11 @@ class RecorderError(Exception):
 
 
 class VideoRecorder:
-    def __init__(self, width, height, fps, want_audio=True, audio_device=None, audio_device_name=None, audio_loopback=True):
+    def __init__(self, width, height, fps, want_audio=True, audio_loopback=True):
         self.width = int(width)
         self.height = int(height)
         self.fps = int(fps)
         self.want_audio = bool(want_audio)
-        self.audio_device = audio_device
-        self.audio_device_name = audio_device_name
         self.audio_loopback = bool(audio_loopback)
 
         self.container = None
@@ -180,12 +179,16 @@ class VideoRecorder:
         return result, None
 
     def _start_audio_capture(self):
+        if sys.platform != "win32":
+            self.audio_error = "Audio capture is supported on Windows only"
+            return
+
         if not HAS_PYAUDIO:
             self.audio_error = "PyAudioWPatch not available"
             return
 
         if not self.audio_loopback:
-            self.audio_error = "Non-loopback audio not supported (no input device)"
+            self.audio_error = "Only loopback audio capture is supported"
             return
 
         device_info, err = self._find_wasapi_device()

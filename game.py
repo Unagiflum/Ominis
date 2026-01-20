@@ -117,8 +117,6 @@ class Game:
         self.is_recording = False
         self.record_failed = False
         self.btn_record_rect = None
-        self.record_audio_device = None
-        self.record_audio_device_name = None
         self.record_audio_loopback = True
         
         # Architecture UI
@@ -202,22 +200,11 @@ class Game:
     def load_recording_settings(self):
         import json
         import os
-        self.record_audio_device = None
-        self.record_audio_device_name = None
         self.record_audio_loopback = True
         if os.path.exists("recording.json"):
             try:
                 with open("recording.json", "r") as f:
                     data = json.load(f)
-                device = data.get("audio_device")
-                if device is not None and device != "":
-                    try:
-                        self.record_audio_device = int(device)
-                    except (TypeError, ValueError):
-                        print("Recording setting audio_device is not a number.")
-                name = data.get("audio_device_name")
-                if isinstance(name, str) and name.strip():
-                    self.record_audio_device_name = name.strip()
                 loopback = data.get("audio_loopback")
                 if loopback is not None:
                     if isinstance(loopback, str):
@@ -539,8 +526,6 @@ class Game:
             self.screen_height,
             60,
             want_audio=True,
-            audio_device=self.record_audio_device,
-            audio_device_name=self.record_audio_device_name,
             audio_loopback=self.record_audio_loopback,
         )
         try:

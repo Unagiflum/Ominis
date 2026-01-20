@@ -4,5 +4,5 @@ torch
 torchvision
 torchaudio
 numpy
-sounddevice>=0.4.6
 av
+PyAudioWPatch; platform_system == "Windows"  # Windows-only loopback capture
