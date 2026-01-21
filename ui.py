@@ -300,19 +300,37 @@ class UI:
         self.draw_group_box(padding, current_y, left_pane_width, reward_height, "Reward & Curriculum")
         
         sy = current_y + 35
-        # Current / Min Rand. % (0% - 25%)
-        epsilon_max = 25.0
-        epsilon_step = 0.5
+        # Current / Min Rand. % (0.000% plus 0.005% - 50% in 1-2-5 steps)
+        epsilon_values = [
+            0.0, 0.005, 0.01, 0.02, 0.05,
+            0.1, 0.2, 0.5, 1.0, 2.0,
+            5.0, 10.0, 20.0, 50.0
+        ]
+        def snap_epsilon(val):
+            default_value = 5.0
+            try:
+                val = float(val)
+            except (TypeError, ValueError):
+                val = default_value
+            if val <= 0.0:
+                return 0.0
+            return min(epsilon_values[1:], key=lambda v: abs(v - val))
+        def epsilon_index(val):
+            return min(range(len(epsilon_values)), key=lambda i: abs(epsilon_values[i] - val))
+        def epsilon_to_norm(val):
+            return epsilon_index(snap_epsilon(val)) / (len(epsilon_values) - 1)
+        def format_percent(val):
+            if val <= 0.0:
+                return "0.000"
+            return f"{val:g}"
         min_rand_raw = params.get('epsilon_min_percent', 5)
         current_rand_raw = params.get('epsilon_current_percent', 20)
-        min_rand = max(0.0, min(epsilon_max, float(min_rand_raw)))
-        current_rand = max(0.0, min(epsilon_max, float(current_rand_raw)))
-        min_rand = round(min_rand / epsilon_step) * epsilon_step
-        current_rand = round(current_rand / epsilon_step) * epsilon_step
+        min_rand = snap_epsilon(min_rand_raw)
+        current_rand = snap_epsilon(current_rand_raw)
         floor_rand = min(min_rand, current_rand)
         current_rand = max(min_rand, current_rand)
-        label = f"Randomness: {current_rand:g}%->{floor_rand:g}%"
-        s_rect = self.draw_range_slider(slider_x, sy, slider_width, floor_rand / epsilon_max, current_rand / epsilon_max, label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+        label = f"Randomness: {format_percent(current_rand)}%->{format_percent(floor_rand)}%"
+        s_rect = self.draw_range_slider(slider_x, sy, slider_width, epsilon_to_norm(floor_rand), epsilon_to_norm(current_rand), label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
         if not is_training: slider_rects['epsilon_range_percent'] = s_rect
         sy += 45
 
@@ -334,10 +352,16 @@ class UI:
         if not is_training: slider_rects['epsilon_half_life_batches'] = s_rect
         sy += 45
         
-        # Learning Rate (0.0001 - 0.0050)
+        # Learning Rate (1e-5 - 1e-2, logarithmic)
+        lr_min = 1e-5
+        lr_max = 1e-2
         lr = params.get('learning_rate', 0.001)
-        lr = max(0.0001, min(0.005, lr))
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (lr - 0.0001) / 0.0049, f"Learning Rate: {lr:.4f}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+        lr = max(lr_min, min(lr_max, lr))
+        lr_log_min = math.log10(lr_min)
+        lr_log_max = math.log10(lr_max)
+        lr_log = math.log10(lr)
+        lr_norm = (lr_log - lr_log_min) / (lr_log_max - lr_log_min)
+        s_rect = self.draw_slider(slider_x, sy, slider_width, lr_norm, f"Learning Rate: {lr:.5f}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
         if not is_training: slider_rects['learning_rate'] = s_rect
         sy += 45
         

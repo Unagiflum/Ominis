@@ -8,8 +8,13 @@ from ui import UI
 from audio import AudioPlayer
 
 class Game:
-    EPSILON_MAX_PERCENT = 25.0
+    EPSILON_MAX_PERCENT = 50.0
     EPSILON_STEP_PERCENT = 0.5
+    EPSILON_PERCENT_VALUES = (
+        0.0, 0.005, 0.01, 0.02, 0.05,
+        0.1, 0.2, 0.5, 1.0, 2.0,
+        5.0, 10.0, 20.0, 50.0
+    )
     EPSILON_HALF_LIFE_MIN_EXP = 2.0
     EPSILON_HALF_LIFE_MAX_EXP = 7.0
     EPSILON_HALF_LIFE_STEP_EXP = 0.5
@@ -288,7 +293,7 @@ class Game:
 
         self.train_params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, int(self.train_params.get('hl_size_idx', 1))))
         self.train_params['hl_count'] = max(1, min(4, int(self.train_params.get('hl_count', 2))))
-        self.train_params['learning_rate'] = max(0.0001, min(0.005, float(self.train_params.get('learning_rate', 0.001))))
+        self.train_params['learning_rate'] = max(1e-5, min(1e-2, float(self.train_params.get('learning_rate', 0.001))))
         self.train_params['gamma'] = 1.0
         self.train_params['big_piece_weight'] = max(1, min(4, int(self.train_params.get('big_piece_weight', 1))))
         self.train_params['pieces_tracked'] = max(1, min(20, int(self.train_params.get('pieces_tracked', 10))))
@@ -2512,10 +2517,30 @@ class Game:
         return int(round(10 ** snapped_exp))
 
     def _snap_epsilon_percent(self, value):
-        value = max(0.0, min(self.EPSILON_MAX_PERCENT, float(value)))
-        step_count = int(round(value / self.EPSILON_STEP_PERCENT))
-        snapped = step_count * self.EPSILON_STEP_PERCENT
-        return max(0.0, min(self.EPSILON_MAX_PERCENT, snapped))
+        default_value = 5.0
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            value = default_value
+        if value <= 0.0:
+            return 0.0
+        values = self.EPSILON_PERCENT_VALUES[1:]
+        return min(values, key=lambda v: abs(v - value))
+
+    def _epsilon_index(self, value):
+        values = self.EPSILON_PERCENT_VALUES
+        return min(range(len(values)), key=lambda i: abs(values[i] - value))
+
+    def _epsilon_percent_to_norm(self, value):
+        value = self._snap_epsilon_percent(value)
+        idx = self._epsilon_index(value)
+        return idx / (len(self.EPSILON_PERCENT_VALUES) - 1)
+
+    def _epsilon_norm_to_percent(self, norm):
+        values = self.EPSILON_PERCENT_VALUES
+        idx = int(round(norm * (len(values) - 1)))
+        idx = max(0, min(len(values) - 1, idx))
+        return values[idx]
 
     def _apply_epsilon_range(self, min_percent, current_percent, apply_current=True):
         min_percent = self._snap_epsilon_percent(min_percent)
@@ -2534,8 +2559,8 @@ class Game:
         current_percent = self._snap_epsilon_percent(self.train_params.get('epsilon_current_percent', 20))
         floor_percent = min(min_percent, current_percent)
         current_percent = max(min_percent, current_percent)
-        floor_x = rect.x + (floor_percent / self.EPSILON_MAX_PERCENT) * rect.width
-        current_x = rect.x + (current_percent / self.EPSILON_MAX_PERCENT) * rect.width
+        floor_x = rect.x + self._epsilon_percent_to_norm(floor_percent) * rect.width
+        current_x = rect.x + self._epsilon_percent_to_norm(current_percent) * rect.width
         if floor_percent == current_percent:
             return 'current' if mouse_x >= current_x else 'min'
         if abs(mouse_x - floor_x) <= abs(mouse_x - current_x):
@@ -2575,8 +2600,7 @@ class Game:
             count = 1 + int(val * 3.99)
             self.train_params['hl_count'] = count
         elif self.active_slider == 'epsilon_range_percent':
-            # Map 0-1 to 0-25 in 0.5% steps
-            val_percent = self._snap_epsilon_percent(val * self.EPSILON_MAX_PERCENT)
+            val_percent = self._epsilon_norm_to_percent(val)
             min_percent = self.train_params.get('epsilon_min_percent', 5)
             current_percent = self.train_params.get('epsilon_current_percent', 20)
             prev_current = current_percent
@@ -2602,10 +2626,15 @@ class Game:
             if self.agent:
                 self.agent.update_hyperparameters()
         elif self.active_slider == 'learning_rate':
-            # Map 0-1 to 0.0001 - 0.0050
-            lr = 0.0001 + (val * 0.0049)
-            self.train_params['learning_rate'] = round(lr, 5)
-            if self.agent: self.agent.update_hyperparameters()
+            # Map 0-1 to 1e-5 - 1e-2 on a log scale
+            lr_min = 1e-5
+            lr_max = 1e-2
+            lr_log_min = math.log10(lr_min)
+            lr_log_max = math.log10(lr_max)
+            lr = 10 ** (lr_log_min + val * (lr_log_max - lr_log_min))
+            self.train_params['learning_rate'] = round(lr, 8)
+            if self.agent:
+                self.agent.update_hyperparameters()
         elif self.active_slider == 'piece_size_range':
             # Map 0-1 to 1, 2, 3, 4, 5
             size = 1 + int(val * 4.99)

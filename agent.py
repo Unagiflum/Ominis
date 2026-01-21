@@ -17,8 +17,13 @@ class MonteCarloAgent:
     2. Computes a single scalar Monte Carlo return R_piece at the end
     3. Trains Q(s, a) to predict R_piece for all (state, action) pairs in the trajectory
     """
-    EPSILON_MAX_PERCENT = 25.0
+    EPSILON_MAX_PERCENT = 50.0
     EPSILON_STEP_PERCENT = 0.5
+    EPSILON_PERCENT_VALUES = (
+        0.0, 0.005, 0.01, 0.02, 0.05,
+        0.1, 0.2, 0.5, 1.0, 2.0,
+        5.0, 10.0, 20.0, 50.0
+    )
     EPSILON_HALF_LIFE_MIN_EXP = 2.0
     EPSILON_HALF_LIFE_MAX_EXP = 7.0
     EPSILON_HALF_LIFE_STEP_EXP = 0.5
@@ -46,7 +51,7 @@ class MonteCarloAgent:
         self.epsilon_decay = self._compute_epsilon_decay(half_life)
         lr = self.params.get('learning_rate', 0.0001)
         # Clamp to UI-supported range
-        lr = max(0.0001, min(0.005, lr))
+        lr = max(1e-5, min(1e-2, lr))
         self.learning_rate = lr
         self.memory = deque(maxlen=10000) # Single replay memory for all trajectories
         self.total_samples_since_train = 0
@@ -144,10 +149,15 @@ class MonteCarloAgent:
                 print(f"Error creating CSV file: {e}")
 
     def _snap_epsilon_percent(self, value):
-        value = max(0.0, min(self.EPSILON_MAX_PERCENT, float(value)))
-        step_count = int(round(value / self.EPSILON_STEP_PERCENT))
-        snapped = step_count * self.EPSILON_STEP_PERCENT
-        return max(0.0, min(self.EPSILON_MAX_PERCENT, snapped))
+        default_value = 5.0
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            value = default_value
+        if value <= 0.0:
+            return 0.0
+        values = self.EPSILON_PERCENT_VALUES[1:]
+        return min(values, key=lambda v: abs(v - value))
 
     def _snap_epsilon_half_life(self, value):
         default_exp = 4.5
@@ -495,7 +505,7 @@ class MonteCarloAgent:
         else:
             lines_per_game_str += " (ave: N/A)"
 
-        epsilon_str = f"{self.epsilon:.3f}"
+        epsilon_str = f"{self.epsilon:.5f}"
         print(f"{inference_moves} moves, {pieces} pieces, {lines} lines, {gameovers} Game Overs || Lines / Piece = {lpp_str} || Lines / Game = {lines_per_game_str} || Epsilon = {epsilon_str}")
 
         self.total_samples_since_train = 0
@@ -648,7 +658,7 @@ class MonteCarloAgent:
         self.params['epsilon_half_life_batches'] = half_life
         self.epsilon_decay = self._compute_epsilon_decay(half_life)
         lr = self.params.get('learning_rate', 0.0001)
-        lr = max(0.0001, min(0.005, lr))
+        lr = max(1e-5, min(1e-2, lr))
         self.learning_rate = lr
         # If the floor increases, ensure current epsilon respects it
         self.epsilon = max(self.epsilon, self.epsilon_min)
