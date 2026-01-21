@@ -389,14 +389,14 @@ class MonteCarloAgent:
             if valley_delta > 0:
                 reward -= 0.050 * valley_delta
 
-        if max_height_delta > 0:
-            reward -= 0.050 * max_height_delta
+        #if max_height_delta > 0:
+        #    reward -= 0.050 * max_height_delta
 
-        if height_std_delta < 0:
-            reward -= 0.049 * height_std_delta
-        else:
-            if height_std_delta > 0:
-                reward -= 0.050 * height_std_delta
+        #if height_std_delta < 0:
+        #    reward -= 0.049 * height_std_delta
+        #else:
+        #    if height_std_delta > 0:
+        #        reward -= 0.050 * height_std_delta
 
         return reward
 
