@@ -19,6 +19,33 @@ class Game:
     EPSILON_HALF_LIFE_MAX_EXP = 7.0
     EPSILON_HALF_LIFE_STEP_EXP = 0.5
     EPSILON_HALF_LIFE_STEPS = int((EPSILON_HALF_LIFE_MAX_EXP - EPSILON_HALF_LIFE_MIN_EXP) / EPSILON_HALF_LIFE_STEP_EXP)
+    REWARD_DEFAULTS = {
+        'reward_game_over': -2.0,
+        'reward_lines_cleared': 0.075,
+        'reward_lines_squared': False,
+        'reward_hole_decrease': 0.490,
+        'reward_hole_increase': -0.500,
+        'reward_jaggedness_decrease': 0.049,
+        'reward_jaggedness_increase': -0.050,
+        'reward_pits_decrease': 0.049,
+        'reward_pits_increase': -0.050,
+        'reward_max_height_increase': 0.000,
+        'reward_height_std_decrease': 0.000,
+        'reward_height_std_increase': 0.000
+    }
+    REWARD_VALUE_KEYS = (
+        'reward_game_over',
+        'reward_lines_cleared',
+        'reward_hole_decrease',
+        'reward_hole_increase',
+        'reward_jaggedness_decrease',
+        'reward_jaggedness_increase',
+        'reward_pits_decrease',
+        'reward_pits_increase',
+        'reward_max_height_increase',
+        'reward_height_std_decrease',
+        'reward_height_std_increase'
+    )
 
     def __init__(self):
         self.screen_width = 635
@@ -112,6 +139,10 @@ class Game:
         self.save_name_text = ""
         self.save_name_rect = None
         self.save_name_limit = 32
+        self.reward_input_active = None
+        self.reward_input_text = ""
+        self.reward_input_rects = {}
+        self.reward_lines_squared_rect = None
 
         self.record_name_active = False
         self.record_name_text = ""
@@ -141,7 +172,8 @@ class Game:
             'big_piece_weight': 1,
             'pieces_tracked': 10,
             'gamma': 1.0,
-            'short_games': False
+            'short_games': False,
+            **self.REWARD_DEFAULTS
         }
         self.train_slider_rects = {}
         self.active_slider = None
@@ -309,7 +341,94 @@ class Game:
         self.train_params['epsilon_half_life_batches'] = self._snap_epsilon_half_life(
             self.train_params.get('epsilon_half_life_batches', 10 ** 4.5)
         )
+        self._clamp_reward_params()
         return True
+
+    def _clamp_reward_value(self, value):
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+        value = max(-5.0, min(5.0, value))
+        value = round(value, 3)
+        if abs(value) < 0.0005:
+            value = 0.0
+        return value
+
+    def _clamp_reward_params(self):
+        for key, default in self.REWARD_DEFAULTS.items():
+            if key == 'reward_lines_squared':
+                value = self.train_params.get(key, default)
+                if isinstance(value, str):
+                    lowered = value.strip().lower()
+                    value = lowered in ("true", "1", "yes", "y")
+                else:
+                    value = bool(value)
+                self.train_params[key] = value
+                continue
+            value = self.train_params.get(key, default)
+            parsed = self._clamp_reward_value(value)
+            if parsed is None:
+                parsed = default
+            self.train_params[key] = parsed
+
+    def _format_reward_value(self, value):
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            value = 0.0
+        if abs(value) < 0.0005:
+            value = 0.0
+        return f"{value:.3f}"
+
+    def _clear_reward_input(self):
+        self.reward_input_active = None
+        self.reward_input_text = ""
+
+    def _start_reward_input(self, key):
+        self.reward_input_active = key
+        self.reward_input_text = self._format_reward_value(self.train_params.get(key, 0.0))
+
+    def _commit_reward_input(self):
+        if not self.reward_input_active:
+            return
+        key = self.reward_input_active
+        parsed = self._clamp_reward_value(self.reward_input_text.strip())
+        if parsed is not None:
+            self.train_params[key] = parsed
+        self._clear_reward_input()
+
+    def _append_reward_char(self, current, char):
+        if not char:
+            return current
+        if char.isdigit():
+            return current + char
+        if char in "+-":
+            return char if not current else current
+        if char == ".":
+            if "." in current:
+                return current
+            if not current or current in ("+", "-"):
+                return current + "0."
+            return current + "."
+        return current
+
+    def _handle_reward_input_key(self, event):
+        if event.key == pygame.K_RETURN:
+            self._commit_reward_input()
+            return True
+        if event.key == pygame.K_ESCAPE:
+            self._clear_reward_input()
+            return True
+        if event.key == pygame.K_BACKSPACE:
+            self.reward_input_text = self.reward_input_text[:-1]
+            return True
+        if event.unicode:
+            updated = self._append_reward_char(self.reward_input_text, event.unicode)
+            if updated != self.reward_input_text:
+                self.reward_input_text = updated
+            return True
+        return False
 
     def select_train_model(self, model_name):
         import os
@@ -340,6 +459,7 @@ class Game:
         self.train_model_source = None
         self.train_model_arch = None
         self.epsilon_override_pending = False
+        self._clear_reward_input()
 
         model_path = self.get_model_filename()
         if os.path.exists(model_path):
@@ -1042,9 +1162,31 @@ class Game:
                             self.refresh_watch_models()
 
             elif self.state == "TRAIN_MENU":
+                if self.reward_input_active and event.type == pygame.KEYDOWN:
+                    if self._handle_reward_input_key(event):
+                        continue
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         mouse_pos = event.pos
+                        reward_handled = False
+                        if self.reward_input_rects:
+                            for key, rect in self.reward_input_rects.items():
+                                if rect and rect.collidepoint(mouse_pos):
+                                    if self.reward_input_active != key:
+                                        self._commit_reward_input()
+                                        self._start_reward_input(key)
+                                    reward_handled = True
+                                    break
+                        if reward_handled:
+                            self.train_dropdown_open = False
+                            continue
+                        if self.reward_lines_squared_rect and self.reward_lines_squared_rect.collidepoint(mouse_pos):
+                            self._commit_reward_input()
+                            self.train_params['reward_lines_squared'] = not self.train_params.get('reward_lines_squared', False)
+                            self.train_dropdown_open = False
+                            continue
+                        if self.reward_input_active:
+                            self._commit_reward_input()
                         dropdown_handled = False
                         if self.train_dropdown_open:
                             for rect, model_name in self.train_option_rects:
@@ -1548,7 +1690,7 @@ class Game:
             return
 
         if is_game_over:
-            reward_value -= 2.0
+            reward_value += float(self.train_params.get('reward_game_over', -2.0))
 
         history_len = self.get_piece_history_length()
         entry = {
@@ -2009,7 +2151,20 @@ class Game:
             dropdown_active = not is_training
             dropdown_open = self.train_dropdown_open and dropdown_active
             save_active = self.agent is not None
-            self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.btn_train_save_rect, self.train_slider_rects, self.train_slider_rect, self.short_games_chk_rect, train_dropdown_anchor = self.ui.draw_train_menu(self.screen_width, self.screen_height, self.train_params, mouse_pos, display_grid, is_training=is_training, volume=self.volume, save_active=save_active)
+            (self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.btn_train_save_rect,
+             self.train_slider_rects, self.train_slider_rect, self.short_games_chk_rect, train_dropdown_anchor,
+             self.reward_input_rects, self.reward_lines_squared_rect) = self.ui.draw_train_menu(
+                self.screen_width,
+                self.screen_height,
+                self.train_params,
+                mouse_pos,
+                display_grid,
+                is_training=is_training,
+                volume=self.volume,
+                save_active=save_active,
+                reward_active=self.reward_input_active,
+                reward_input_text=self.reward_input_text
+            )
 
             train_dropdown_layout = None
             if train_dropdown_anchor:

@@ -251,7 +251,7 @@ class UI:
                 
             current_y += line_height
 
-    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False, volume=0.5, save_active=True):
+    def draw_train_menu(self, screen_width, screen_height, params, mouse_pos, grid, is_training=False, volume=0.5, save_active=True, reward_active=None, reward_input_text=""):
 
         self.draw_background()
         
@@ -269,6 +269,8 @@ class UI:
         slider_rects = {}
         short_games_chk_rect = None
         dropdown_rect = None
+        reward_input_rects = {}
+        reward_lines_squared_rect = None
 
         show_training_board = is_training and params.get('visual_mode', False)
         show_settings = not show_training_board
@@ -299,12 +301,149 @@ class UI:
             
             dropdown_rect = pygame.Rect(slider_x, sy + 25, slider_width, 25)
 
-            
+            # --- Rewards Group ---
+            reward_x = padding + left_pane_width + padding
+            reward_width = screen_width - reward_x - padding
+            reward_y = current_y
+            reward_enabled = not is_training
+
+            reward_rows = [
+                {"label": "Holes", "left": "reward_hole_decrease", "right": "reward_hole_increase"},
+                {"label": "Jaggedness", "left": "reward_jaggedness_decrease", "right": "reward_jaggedness_increase"},
+                {"label": "Pits", "left": "reward_pits_decrease", "right": "reward_pits_increase"},
+                {"label": "Max Height", "left": None, "right": "reward_max_height_increase"},
+                {"label": "Height St.dev", "left": "reward_height_std_decrease", "right": "reward_height_std_increase"},
+                {"separator": True},
+                {"label": "Game Over", "left": "reward_game_over", "right": None, "center": True},
+                {"label": "Lines Cleared", "left": "reward_lines_cleared", "right": None, "center": True},
+                {"label": "Scale line reward per lines squared", "checkbox": True},
+            ]
+
+            def format_reward(value):
+                try:
+                    value = float(value)
+                except (TypeError, ValueError):
+                    value = 0.0
+                if abs(value) < 0.0005:
+                    value = 0.0
+                return f"{value:.3f}"
+
+            def reward_display(key):
+                if key == reward_active:
+                    return reward_input_text
+                return format_reward(params.get(key, 0.0))
+
+            reward_padding = 12
+            label_gap = 8
+            col_gap = 8
+            input_width = 96
+            input_height = 24
+            checkbox_label_offset = 24
+            input_labels = [row["label"] for row in reward_rows if row.get("left") or row.get("right")]
+            max_label_width = max(self.small_font.size(label)[0] for label in input_labels) if input_labels else 0
+            label_width = max_label_width
+            separator_height = 12
+
+            header_y = reward_y + 28
+            header_h = self.small_font.get_height()
+            first_row_y = header_y + header_h + 6
+            row_step = input_height + 8
+            row_y = first_row_y
+            last_bottom = row_y
+            for row in reward_rows:
+                if row.get("separator"):
+                    last_bottom = row_y + separator_height
+                    row_y += separator_height
+                else:
+                    last_bottom = row_y + input_height
+                    row_y += row_step
+            reward_height = max(arch_height, (last_bottom + reward_padding) - reward_y)
+
+            self.draw_group_box(reward_x, reward_y, reward_width, reward_height, "Rewards")
+
+            label_x = reward_x + reward_padding
+            col1_x = label_x + label_width + label_gap
+            col2_x = col1_x + input_width + col_gap
+            header_color = self.text_color if reward_enabled else (120, 120, 120)
+            dec_surf = self.small_font.render("Decrease", True, header_color)
+            inc_surf = self.small_font.render("Increase", True, header_color)
+            self.screen.blit(dec_surf, (col1_x + input_width // 2 - dec_surf.get_width() // 2, header_y))
+            self.screen.blit(inc_surf, (col2_x + input_width // 2 - inc_surf.get_width() // 2, header_y))
+
+            row_y = first_row_y
+            label_color = self.text_color if reward_enabled else (120, 120, 120)
+            for row in reward_rows:
+                if row.get("separator"):
+                    line_y = row_y + separator_height // 2
+                    line_start = label_x
+                    line_end = reward_x + reward_width - reward_padding
+                    pygame.draw.line(self.screen, self.border_color, (line_start, line_y), (line_end, line_y), 1)
+                    row_y += separator_height
+                    continue
+
+                label = row["label"]
+                if row.get("checkbox"):
+                    checkbox_x = label_x
+                    checkbox_y = row_y + (input_height - 20) // 2
+                    reward_lines_squared_rect = self.draw_checkbox(
+                        checkbox_x,
+                        checkbox_y,
+                        params.get('reward_lines_squared', False),
+                        label,
+                        mouse_pos,
+                        active=reward_enabled,
+                        font=self.small_font,
+                        label_offset=checkbox_label_offset
+                    )
+                    row_y += row_step
+                    continue
+
+                label_surf = self.small_font.render(label, True, label_color)
+                self.screen.blit(label_surf, (label_x, row_y + (input_height - label_surf.get_height()) // 2))
+
+                left_key = row.get("left")
+                right_key = row.get("right")
+
+                input_center_x = col1_x + ((col2_x + input_width) - col1_x - input_width) // 2
+                if left_key:
+                    left_text = reward_display(left_key)
+                    left_input_x = input_center_x if row.get("center") else col1_x
+                    left_rect = self.draw_text_input(
+                        left_input_x,
+                        row_y,
+                        input_width,
+                        input_height,
+                        left_text,
+                        active=reward_enabled,
+                        focused=(reward_active == left_key),
+                        mouse_pos=mouse_pos,
+                        font=self.small_font
+                    )
+                    reward_input_rects[left_key] = left_rect
+
+                if right_key:
+                    right_text = reward_display(right_key)
+                    right_input_x = input_center_x if row.get("center") else col2_x
+                    right_rect = self.draw_text_input(
+                        right_input_x,
+                        row_y,
+                        input_width,
+                        input_height,
+                        right_text,
+                        active=reward_enabled,
+                        focused=(reward_active == right_key),
+                        mouse_pos=mouse_pos,
+                        font=self.small_font
+                    )
+                    reward_input_rects[right_key] = right_rect
+
+                row_y += row_step
+
             current_y += arch_height + 15
             
             # --- Curriculum Group ---
-            reward_height = 315
-            self.draw_group_box(padding, current_y, left_pane_width, reward_height, "Curriculum")
+            curriculum_height = 315
+            self.draw_group_box(padding, current_y, left_pane_width, curriculum_height, "Curriculum")
             
             sy = current_y + 35
             # Current / Min Rand. % (0.000% plus 0.005% - 50% in 1-2-5 steps)
@@ -436,7 +575,8 @@ class UI:
             
             self.draw_grid(grid, offset_x, offset_y)
         
-        return btn_back_rect, chk_rect, btn_start_rect, btn_save_rect, slider_rects, vol_slider_rect, short_games_chk_rect, dropdown_rect
+        return (btn_back_rect, chk_rect, btn_start_rect, btn_save_rect, slider_rects, vol_slider_rect,
+                short_games_chk_rect, dropdown_rect, reward_input_rects, reward_lines_squared_rect)
 
 
     def draw_group_box(self, x, y, width, height, title):
@@ -480,7 +620,7 @@ class UI:
         resume_rect = resume_text.get_rect(center=(x + width // 2, y + height // 2 + 60))
         self.screen.blit(resume_text, resume_rect)
 
-    def draw_checkbox(self, x, y, checked, label, mouse_pos=None, active=True, font=None):
+    def draw_checkbox(self, x, y, checked, label, mouse_pos=None, active=True, font=None, label_offset=30):
         # Box
         rect = pygame.Rect(x, y, 20, 20)
         
@@ -497,7 +637,7 @@ class UI:
         # Label
         use_font = font if font else self.font
         text = use_font.render(label, True, color)
-        self.screen.blit(text, (x + 30, y))
+        self.screen.blit(text, (x + label_offset, y))
         
         return rect
 
@@ -542,34 +682,42 @@ class UI:
         
         return rect
 
-    def draw_text_input(self, x, y, width, height, text, placeholder="", active=True, mouse_pos=None, font=None):
+    def draw_text_input(self, x, y, width, height, text, placeholder="", active=True, mouse_pos=None, font=None, focused=None):
         if font is None:
             font = self.font
         rect = pygame.Rect(x, y, width, height)
+
+        if focused is None:
+            focused = active
 
         pygame.draw.rect(self.screen, self.bg_color, rect, border_radius=8)
 
         color = self.text_color if active else (100, 100, 100)
         if active:
-            color = self.accent_color
-        elif mouse_pos and rect.collidepoint(mouse_pos):
-            color = self.accent_color
+            if focused:
+                color = self.accent_color
+            elif mouse_pos and rect.collidepoint(mouse_pos):
+                color = self.accent_color
 
         pygame.draw.rect(self.screen, color, rect, 2, border_radius=8)
 
         display_text = text if text else placeholder
-        display_color = self.text_color if text else (120, 120, 120)
+        if active:
+            display_color = self.text_color if text else (120, 120, 120)
+        else:
+            display_color = (120, 120, 120) if text else (90, 90, 90)
         display_text = self._truncate_text(display_text, width - 16, font)
         text_surf = font.render(display_text, True, display_color)
         self.screen.blit(text_surf, (x + 8, y + height // 2 - text_surf.get_height() // 2))
 
-        if active:
+        if active and focused:
             caret_text = self._truncate_text(text, width - 16, font) if text else ""
             caret_x = x + 8 + font.size(caret_text)[0] + 2
             caret_y = y + 6
             caret_h = height - 12
-            if caret_x < x + width - 6:
-                pygame.draw.line(self.screen, color, (caret_x, caret_y), (caret_x, caret_y + caret_h), 2)
+            caret_x = min(caret_x, x + width - 6)
+            caret_x = max(caret_x, x + 6)
+            pygame.draw.line(self.screen, color, (caret_x, caret_y), (caret_x, caret_y + caret_h), 2)
 
         return rect
 

@@ -364,39 +364,60 @@ class MonteCarloAgent:
         Returns:
             Total reward for this piece placement (game over penalty applied elsewhere)
 
-        Game over penalty of 2.0 is applied in game.py. Scale rewards here accordingly            
+        Game over penalty is applied in game.py using train params. Scale rewards here accordingly            
 
         """
-        reward = 0.00
+        def get_float(key, default):
+            value = self.params.get(key, default)
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return float(default)
 
-        reward += 0.075 * lines_cleared
+        lines_squared = self.params.get('reward_lines_squared', False)
+        if isinstance(lines_squared, str):
+            lines_squared = lines_squared.strip().lower() in ("true", "1", "yes", "y")
+        else:
+            lines_squared = bool(lines_squared)
 
+        reward = 0.0
+
+        lines_weight = get_float('reward_lines_cleared', 0.075)
+        lines_factor = (lines_cleared ** 2) if lines_squared else lines_cleared
+        reward += lines_weight * lines_factor
+
+        hole_dec = get_float('reward_hole_decrease', 0.490)
+        hole_inc = get_float('reward_hole_increase', -0.500)
         if hole_delta < 0:
-            reward -= 0.490 * hole_delta
-        else:
-            if hole_delta > 0:
-                reward -= 0.500 * hole_delta
+            reward += hole_dec * (-hole_delta)
+        elif hole_delta > 0:
+            reward += hole_inc * hole_delta
 
+        jagged_dec = get_float('reward_jaggedness_decrease', 0.049)
+        jagged_inc = get_float('reward_jaggedness_increase', -0.050)
         if jaggedness_delta < 0:
-            reward -= 0.049 * jaggedness_delta
-        else:
-            if jaggedness_delta > 0:
-                reward -= 0.050 * jaggedness_delta
+            reward += jagged_dec * (-jaggedness_delta)
+        elif jaggedness_delta > 0:
+            reward += jagged_inc * jaggedness_delta
 
+        # "Pits" in the UI correspond to valley deltas from the grid stats.
+        pits_dec = get_float('reward_pits_decrease', 0.049)
+        pits_inc = get_float('reward_pits_increase', -0.050)
         if valley_delta < 0:
-            reward -= 0.049 * valley_delta
-        else:
-            if valley_delta > 0:
-                reward -= 0.050 * valley_delta
+            reward += pits_dec * (-valley_delta)
+        elif valley_delta > 0:
+            reward += pits_inc * valley_delta
 
-        #if max_height_delta > 0:
-        #    reward -= 0.050 * max_height_delta
+        max_height_inc = get_float('reward_max_height_increase', 0.000)
+        if max_height_delta > 0:
+            reward += max_height_inc * max_height_delta
 
-        #if height_std_delta < 0:
-        #    reward -= 0.049 * height_std_delta
-        #else:
-        #    if height_std_delta > 0:
-        #        reward -= 0.050 * height_std_delta
+        height_std_dec = get_float('reward_height_std_decrease', 0.000)
+        height_std_inc = get_float('reward_height_std_increase', 0.000)
+        if height_std_delta < 0:
+            reward += height_std_dec * (-height_std_delta)
+        elif height_std_delta > 0:
+            reward += height_std_inc * height_std_delta
 
         return reward
 
