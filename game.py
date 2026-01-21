@@ -1030,7 +1030,7 @@ class Game:
                         elif self.btn_train_rect and self.btn_train_rect.collidepoint(mouse_pos):
                             self.state = "TRAIN_MENU"
                             self.initialize_train_menu()
-                            # Stop music if visual mode is off (from saved params or default)
+                            # Stop music if View Training is off (from saved params or default)
                             if not self.train_params['visual_mode']:
                                 self.audio.stop()
                         elif self.btn_watch_rect and self.btn_watch_rect.collidepoint(mouse_pos):
@@ -1309,10 +1309,10 @@ class Game:
                             self.train_params['visual_mode'] = not self.train_params['visual_mode']
                             if not self.train_params['visual_mode']:
                                 self.audio.stop()
-                                print("Visual mode OFF - Audio stopped")
+                                print("View Training OFF - Audio stopped")
                             else:
                                 self.audio.start()
-                                print("Visual mode ON - Audio started")
+                                print("View Training ON - Audio started")
                         elif self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
                             # STOP button pressed
                             if self.agent:
@@ -1875,7 +1875,7 @@ class Game:
 
         elif self.state == "TRAINING":
             if self.train_params['visual_mode']:
-                # Visual Mode: Run at specific speed (e.g. 250ms)
+                # View Training: Run at specific speed (e.g. 250ms)
                 # User said: "screen shows the agent playing at some speed... Perhaps 250ms per piece advance"
                 # Wait, "per piece advance" usually means per step (gravity).
                 train_speed = 50 # ms
@@ -2003,20 +2003,9 @@ class Game:
             # In TRAINING, we still want to show the menu controls, but maybe disable some?
             # User said "left panel should retain the Train AI controls".
             # So we use the same draw function.
-            # But we need to make sure the game board is drawn with the current state.
-            
-            # If Headless (visual_mode=False), we might not want to draw the board updates every frame?
-            # User said: "If visual mode is not selected, the game board stays blank"
-            # So we pass a dummy grid or just don't draw the grid content in draw_train_menu if headless?
-            # Actually, draw_train_menu calls draw_grid.
-            
-            # Let's handle the "Blank Board" logic in ui.py or here by passing a clean grid if headless.
-            display_grid = self.grid
-            if self.state == "TRAINING" and not self.train_params['visual_mode']:
-                # Create a dummy empty grid for display
-                display_grid = Grid(self.grid_width, self.grid_height, self.cell_size)
-            
             is_training = (self.state == "TRAINING" or (self.state in ["ANIMATING_CLEAR", "ANIMATING_DROP"] and hasattr(self, 'pre_anim_state') and self.pre_anim_state == "TRAINING"))
+            show_training_board = is_training and self.train_params.get('visual_mode', False)
+            display_grid = self.grid
             dropdown_active = not is_training
             dropdown_open = self.train_dropdown_open and dropdown_active
             save_active = self.agent is not None
@@ -2067,8 +2056,8 @@ class Game:
                 self.train_option_rects = []
                 self.train_dropdown_open = False
             
-            # If TRAINING, we also need to draw the falling piece if Visual Mode is ON
-            if is_training and self.train_params['visual_mode']:
+            # If TRAINING, we also need to draw the falling piece if View Training is ON
+            if show_training_board:
                  # We need to manually draw the piece on top because draw_train_menu draws the grid background/locked blocks
                  # But draw_train_menu calls draw_grid which clips.
                  # We need to calculate offsets again.

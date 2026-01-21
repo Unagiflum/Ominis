@@ -258,141 +258,148 @@ class UI:
         # Standard Padding
         padding = 20
         left_pane_width = 210 # Standard width (same as score/preview)
+        slider_bar_offset = -3
         
         # Title
         title = self.large_font.render("TRAIN AI", True, self.text_color)
         self.screen.blit(title, (padding, padding))
         
         current_y = padding + 45
-        
-        # --- Architecture Group ---
-        arch_height = 145
-        self.draw_group_box(padding, current_y, left_pane_width, arch_height, "Architecture")
-        
-        # Hidden Layer Size (128, 256, 512, 1024, 2048)
-        hl_sizes = [128, 256, 512, 1024, 2048]
-        max_hl_idx = max(1, len(hl_sizes) - 1)
-        hl_size_idx = max(0, min(max_hl_idx, int(params.get('hl_size_idx', 1))))
-        hl_size_val = hl_sizes[hl_size_idx]
-        
+
         slider_rects = {}
-        slider_width = 170
-        slider_x = padding + (left_pane_width - slider_width) // 2
-        slider_bar_offset = -3
-        
-        sy = current_y + 40
-        # Hidden Layer Size
-        s_rect = self.draw_slider(slider_x, sy, slider_width, hl_size_idx / max_hl_idx, f"Hidden Size: {hl_size_val}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
-        if not is_training: slider_rects['hl_size'] = s_rect
-        sy += 40
-        
-        # Hidden Layer Count (1, 2, 3, 4)
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (params['hl_count'] - 1) / 3.0, f"Hidden Layers: {params['hl_count']}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
-        if not is_training: slider_rects['hl_count'] = s_rect
-        
-        dropdown_rect = pygame.Rect(slider_x, sy + 25, slider_width, 25)
+        short_games_chk_rect = None
+        dropdown_rect = None
 
-        
-        current_y += arch_height + 15
-        
-        # --- Reward / Curriculum Group ---
-        reward_height = 315
-        self.draw_group_box(padding, current_y, left_pane_width, reward_height, "Reward & Curriculum")
-        
-        sy = current_y + 35
-        # Current / Min Rand. % (0.000% plus 0.005% - 50% in 1-2-5 steps)
-        epsilon_values = [
-            0.0, 0.005, 0.01, 0.02, 0.05,
-            0.1, 0.2, 0.5, 1.0, 2.0,
-            5.0, 10.0, 20.0, 50.0
-        ]
-        def snap_epsilon(val):
-            default_value = 5.0
+        show_training_board = is_training and params.get('visual_mode', False)
+        show_settings = not show_training_board
+
+        if show_settings:
+            # --- Architecture Group ---
+            arch_height = 145
+            self.draw_group_box(padding, current_y, left_pane_width, arch_height, "Architecture")
+            
+            # Hidden Layer Size (128, 256, 512, 1024, 2048)
+            hl_sizes = [128, 256, 512, 1024, 2048]
+            max_hl_idx = max(1, len(hl_sizes) - 1)
+            hl_size_idx = max(0, min(max_hl_idx, int(params.get('hl_size_idx', 1))))
+            hl_size_val = hl_sizes[hl_size_idx]
+            
+            slider_width = 170
+            slider_x = padding + (left_pane_width - slider_width) // 2
+            
+            sy = current_y + 40
+            # Hidden Layer Size
+            s_rect = self.draw_slider(slider_x, sy, slider_width, hl_size_idx / max_hl_idx, f"Hidden Size: {hl_size_val}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+            if not is_training: slider_rects['hl_size'] = s_rect
+            sy += 40
+            
+            # Hidden Layer Count (1, 2, 3, 4)
+            s_rect = self.draw_slider(slider_x, sy, slider_width, (params['hl_count'] - 1) / 3.0, f"Hidden Layers: {params['hl_count']}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+            if not is_training: slider_rects['hl_count'] = s_rect
+            
+            dropdown_rect = pygame.Rect(slider_x, sy + 25, slider_width, 25)
+
+            
+            current_y += arch_height + 15
+            
+            # --- Curriculum Group ---
+            reward_height = 315
+            self.draw_group_box(padding, current_y, left_pane_width, reward_height, "Curriculum")
+            
+            sy = current_y + 35
+            # Current / Min Rand. % (0.000% plus 0.005% - 50% in 1-2-5 steps)
+            epsilon_values = [
+                0.0, 0.005, 0.01, 0.02, 0.05,
+                0.1, 0.2, 0.5, 1.0, 2.0,
+                5.0, 10.0, 20.0, 50.0
+            ]
+            def snap_epsilon(val):
+                default_value = 5.0
+                try:
+                    val = float(val)
+                except (TypeError, ValueError):
+                    val = default_value
+                if val <= 0.0:
+                    return 0.0
+                return min(epsilon_values[1:], key=lambda v: abs(v - val))
+            def epsilon_index(val):
+                return min(range(len(epsilon_values)), key=lambda i: abs(epsilon_values[i] - val))
+            def epsilon_to_norm(val):
+                return epsilon_index(snap_epsilon(val)) / (len(epsilon_values) - 1)
+            def format_percent(val):
+                if val <= 0.0:
+                    return "0.000"
+                return f"{val:g}"
+            min_rand_raw = params.get('epsilon_min_percent', 5)
+            current_rand_raw = params.get('epsilon_current_percent', 20)
+            min_rand = snap_epsilon(min_rand_raw)
+            current_rand = snap_epsilon(current_rand_raw)
+            floor_rand = min(min_rand, current_rand)
+            current_rand = max(min_rand, current_rand)
+            label = f"Randomness: {format_percent(current_rand)}%->{format_percent(floor_rand)}%"
+            s_rect = self.draw_range_slider(slider_x, sy, slider_width, epsilon_to_norm(floor_rand), epsilon_to_norm(current_rand), label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+            if not is_training: slider_rects['epsilon_range_percent'] = s_rect
+            sy += 45
+
+            # Randomness Half-life (10^2 - 10^7 in half-powers)
+            half_life_raw = params.get('epsilon_half_life_batches', 10 ** 4.5)
             try:
-                val = float(val)
+                half_life = float(half_life_raw)
             except (TypeError, ValueError):
-                val = default_value
-            if val <= 0.0:
-                return 0.0
-            return min(epsilon_values[1:], key=lambda v: abs(v - val))
-        def epsilon_index(val):
-            return min(range(len(epsilon_values)), key=lambda i: abs(epsilon_values[i] - val))
-        def epsilon_to_norm(val):
-            return epsilon_index(snap_epsilon(val)) / (len(epsilon_values) - 1)
-        def format_percent(val):
-            if val <= 0.0:
-                return "0.000"
-            return f"{val:g}"
-        min_rand_raw = params.get('epsilon_min_percent', 5)
-        current_rand_raw = params.get('epsilon_current_percent', 20)
-        min_rand = snap_epsilon(min_rand_raw)
-        current_rand = snap_epsilon(current_rand_raw)
-        floor_rand = min(min_rand, current_rand)
-        current_rand = max(min_rand, current_rand)
-        label = f"Randomness: {format_percent(current_rand)}%->{format_percent(floor_rand)}%"
-        s_rect = self.draw_range_slider(slider_x, sy, slider_width, epsilon_to_norm(floor_rand), epsilon_to_norm(current_rand), label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
-        if not is_training: slider_rects['epsilon_range_percent'] = s_rect
-        sy += 45
+                half_life = 10 ** 4.5
+            half_life = max(1e2, min(1e7, half_life))
+            exp = math.log10(half_life)
+            exp = max(2.0, min(7.0, exp))
+            step_count = int(round((exp - 2.0) / 0.5))
+            step_count = max(0, min(10, step_count))
+            snapped_exp = 2.0 + step_count * 0.5
+            exp_label = f"{snapped_exp:.1f}"
+            label = f"Rand. half-life: 10^{exp_label}"
+            s_rect = self.draw_slider(slider_x, sy, slider_width, step_count / 10.0, label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+            if not is_training: slider_rects['epsilon_half_life_batches'] = s_rect
+            sy += 45
+            
+            # Learning Rate (1e-5 - 1e-2, logarithmic)
+            lr_min = 1e-5
+            lr_max = 1e-2
+            lr = params.get('learning_rate', 0.001)
+            lr = max(lr_min, min(lr_max, lr))
+            lr_log_min = math.log10(lr_min)
+            lr_log_max = math.log10(lr_max)
+            lr_log = math.log10(lr)
+            lr_norm = (lr_log - lr_log_min) / (lr_log_max - lr_log_min)
+            s_rect = self.draw_slider(slider_x, sy, slider_width, lr_norm, f"Learning Rate: {lr:.5f}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+            if not is_training: slider_rects['learning_rate'] = s_rect
+            sy += 45
+            
+            # Piece Size Range (1-5)
+            min_size = params.get('min_size', 1)
+            max_size = params.get('max_size', 5)
+            min_size = max(1, min(5, int(min_size)))
+            max_size = max(1, min(5, int(max_size)))
+            floor_size = min(min_size, max_size)
+            ceil_size = max(min_size, max_size)
+            label = f"Piece Size: {floor_size}->{ceil_size}"
+            s_rect = self.draw_range_slider(slider_x, sy, slider_width, (floor_size - 1) / 4.0, (ceil_size - 1) / 4.0, label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+            if not is_training: slider_rects['piece_size_range'] = s_rect
+            sy += 45
 
-        # Randomness Half-life (10^2 - 10^7 in half-powers)
-        half_life_raw = params.get('epsilon_half_life_batches', 10 ** 4.5)
-        try:
-            half_life = float(half_life_raw)
-        except (TypeError, ValueError):
-            half_life = 10 ** 4.5
-        half_life = max(1e2, min(1e7, half_life))
-        exp = math.log10(half_life)
-        exp = max(2.0, min(7.0, exp))
-        step_count = int(round((exp - 2.0) / 0.5))
-        step_count = max(0, min(10, step_count))
-        snapped_exp = 2.0 + step_count * 0.5
-        exp_label = f"{snapped_exp:.1f}"
-        label = f"Rand. half-life: 10^{exp_label}"
-        s_rect = self.draw_slider(slider_x, sy, slider_width, step_count / 10.0, label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
-        if not is_training: slider_rects['epsilon_half_life_batches'] = s_rect
-        sy += 45
-        
-        # Learning Rate (1e-5 - 1e-2, logarithmic)
-        lr_min = 1e-5
-        lr_max = 1e-2
-        lr = params.get('learning_rate', 0.001)
-        lr = max(lr_min, min(lr_max, lr))
-        lr_log_min = math.log10(lr_min)
-        lr_log_max = math.log10(lr_max)
-        lr_log = math.log10(lr)
-        lr_norm = (lr_log - lr_log_min) / (lr_log_max - lr_log_min)
-        s_rect = self.draw_slider(slider_x, sy, slider_width, lr_norm, f"Learning Rate: {lr:.5f}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
-        if not is_training: slider_rects['learning_rate'] = s_rect
-        sy += 45
-        
-        # Piece Size Range (1-5)
-        min_size = params.get('min_size', 1)
-        max_size = params.get('max_size', 5)
-        min_size = max(1, min(5, int(min_size)))
-        max_size = max(1, min(5, int(max_size)))
-        floor_size = min(min_size, max_size)
-        ceil_size = max(min_size, max_size)
-        label = f"Piece Size: {floor_size}->{ceil_size}"
-        s_rect = self.draw_range_slider(slider_x, sy, slider_width, (floor_size - 1) / 4.0, (ceil_size - 1) / 4.0, label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
-        if not is_training: slider_rects['piece_size_range'] = s_rect
-        sy += 45
-
-        # Big Piece Weight (1 - 4)
-        big_weight = params.get('big_piece_weight', 1)
-        big_weight = max(1, min(4, int(big_weight)))
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (big_weight - 1) / 3.0, f"Big Piece Weight: {big_weight}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
-        if not is_training: slider_rects['big_piece_weight'] = s_rect
-        sy += 45
-        
-        # Short Game Length (how many pieces before auto-restart in short games mode)
-        short_game_length = max(1, min(20, params.get('pieces_tracked', 10)))
-        s_rect = self.draw_slider(slider_x, sy, slider_width, (short_game_length - 1) / 19.0, f"Piece History: {short_game_length}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
-        if not is_training: slider_rects['pieces_tracked'] = s_rect
-        sy += 25
-        
-        # Short Games Checkbox
-        # Use smaller font for this one to fit
-        short_games_chk_rect = self.draw_checkbox(slider_x, sy, params.get('short_games', False), "Short Games", mouse_pos, active=not is_training, font=self.small_font)
+            # Big Piece Weight (1 - 4)
+            big_weight = params.get('big_piece_weight', 1)
+            big_weight = max(1, min(4, int(big_weight)))
+            s_rect = self.draw_slider(slider_x, sy, slider_width, (big_weight - 1) / 3.0, f"Big Piece Weight: {big_weight}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+            if not is_training: slider_rects['big_piece_weight'] = s_rect
+            sy += 45
+            
+            # Short Game Length (how many pieces before auto-restart in short games mode)
+            short_game_length = max(1, min(20, params.get('pieces_tracked', 10)))
+            s_rect = self.draw_slider(slider_x, sy, slider_width, (short_game_length - 1) / 19.0, f"Piece History: {short_game_length}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+            if not is_training: slider_rects['pieces_tracked'] = s_rect
+            sy += 25
+            
+            # Short Games Checkbox
+            # Use smaller font for this one to fit
+            short_games_chk_rect = self.draw_checkbox(slider_x, sy, params.get('short_games', False), "Short Games", mouse_pos, active=not is_training, font=self.small_font)
         
         # Bottom Controls
         button_width = 150
@@ -413,8 +420,8 @@ class UI:
         btn_save_rect = self.draw_button(padding, bottom_y, button_width, button_height, "SAVE MODEL", save_active and not is_training, mouse_pos)
         bottom_y -= button_height + button_gap
         
-        # Visual Mode Checkbox
-        chk_rect = self.draw_checkbox(padding, bottom_y + 10, params['visual_mode'], "Visual Mode", mouse_pos)
+        # View Training Checkbox
+        chk_rect = self.draw_checkbox(padding, bottom_y + 10, params['visual_mode'], "View Training", mouse_pos)
         bottom_y -= 30
 
         # Volume Slider
@@ -423,10 +430,11 @@ class UI:
         vol_slider_rect = self.draw_slider(padding + 10, bottom_y + 15, 150, volume, "Volume", mouse_pos, self.small_font, bar_offset_y=slider_bar_offset)
         
         # Draw Game Board on Right
-        offset_x = left_pane_width + padding * 2
-        offset_y = padding + 5
-        
-        self.draw_grid(grid, offset_x, offset_y)
+        if show_training_board:
+            offset_x = left_pane_width + padding * 2
+            offset_y = padding + 5
+            
+            self.draw_grid(grid, offset_x, offset_y)
         
         return btn_back_rect, chk_rect, btn_start_rect, btn_save_rect, slider_rects, vol_slider_rect, short_games_chk_rect, dropdown_rect
 
