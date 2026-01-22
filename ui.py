@@ -500,7 +500,7 @@ class UI:
             lr_end = clamp_lr(lr_end_raw)
             if lr_start < lr_end:
                 lr_start, lr_end = lr_end, lr_start
-            label = f"Learning Rate: {lr_start:.6f}->{lr_end:.6f}"
+            label = f"Lrn. Rt.: {lr_start:.6f}->{lr_end:.6f}"
             s_rect = self.draw_range_slider(slider_x, sy, slider_width, lr_to_norm(lr_end), lr_to_norm(lr_start), label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
             if not is_training: slider_rects['learning_rate_range'] = s_rect
             sy += 45
