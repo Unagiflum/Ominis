@@ -560,7 +560,11 @@ class MonteCarloAgent:
             lines_per_game_str += " (ave: N/A)"
 
         epsilon_str = f"{self.epsilon:.5f}"
-        print(f"{inference_moves} moves, {pieces} pieces, {lines} lines, {gameovers} Game Overs || Lines / Piece = {lpp_str} || Lines / Game = {lines_per_game_str} || Epsilon = {epsilon_str}")
+        lr_str = f"{self.learning_rate:.6f}"
+        print(
+            f"{inference_moves} mvs., {pieces} pcs, {lines} lines, {gameovers} Game Overs | "
+            f"LPP = {lpp_str} | LPG = {lines_per_game_str} | Epsilon = {epsilon_str} | Lrn Rate = {lr_str}"
+        )
 
         self.total_samples_since_train = 0
         self.lines_since_train = 0
@@ -705,10 +709,10 @@ class MonteCarloAgent:
         try:
             with open(self.csv_path, 'a') as f:
                 if write_header:
-                    f.write("Batch, Lines per Piece, Lines per Game\n")
+                    f.write("Batch, Lines per Piece, Lines per Game, Epsilon, Learning Rate\n")
                 
-                # Format: Batch, Lines_per_Piece, Lines_per_Game
-                f.write(f"{self.training_steps}, {avg_lpp:.4f}, {avg_lpg:.3f}\n")
+                # Format: Batch, Lines_per_Piece, Lines_per_Game, Epsilon, Learning_Rate
+                f.write(f"{self.training_steps}, {avg_lpp:.4f}, {avg_lpg:.3f}, {self.epsilon:.5f}, {self.learning_rate:.6f}\n")
         except PermissionError:
             print(f"Skipping log for batch {self.training_steps}: File is locked.")
         except Exception as e:
