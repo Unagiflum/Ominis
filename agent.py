@@ -562,7 +562,7 @@ class MonteCarloAgent:
         epsilon_str = f"{self.epsilon:.5f}"
         lr_str = f"{self.learning_rate:.6f}"
         print(
-            f"{inference_moves} mvs., {pieces} pcs, {lines} lines, {gameovers} Game Overs | "
+            f"{inference_moves} mvs, {pieces} pcs, {lines} lines, {gameovers} Game Overs | "
             f"LPP = {lpp_str} | LPG = {lines_per_game_str} | Epsilon = {epsilon_str} | Lrn Rate = {lr_str}"
         )
 
