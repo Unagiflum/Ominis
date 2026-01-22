@@ -12,11 +12,13 @@ def test_logging():
     
     # Setup params
     params = {
-        'hl_size_idx': 1, # 256
+        'hl_size_idx': 4, # 256
         'hl_count': 2,
         'gamma': 0.99,
         'epsilon_min_percent': 10,
-        'learning_rate': 0.001
+        'learning_rate_start': 0.001,
+        'learning_rate_end': 0.001,
+        'learning_rate_current': 0.001
     }
     
     # Clean up

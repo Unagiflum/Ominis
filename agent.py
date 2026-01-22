@@ -28,6 +28,8 @@ class MonteCarloAgent:
     EPSILON_HALF_LIFE_MAX_EXP = 7.0
     EPSILON_HALF_LIFE_STEP_EXP = 0.5
     EPSILON_HALF_LIFE_STEPS = int((EPSILON_HALF_LIFE_MAX_EXP - EPSILON_HALF_LIFE_MIN_EXP) / EPSILON_HALF_LIFE_STEP_EXP)
+    LR_MIN = 1e-6
+    LR_MAX = 1e-2
 
     def __init__(self, train_params):
         self.params = train_params
@@ -49,10 +51,12 @@ class MonteCarloAgent:
         half_life = self._snap_epsilon_half_life(self.params.get('epsilon_half_life_batches', 10 ** 4.5))
         self.params['epsilon_half_life_batches'] = half_life
         self.epsilon_decay = self._compute_epsilon_decay(half_life)
-        lr = self.params.get('learning_rate', 0.0001)
-        # Clamp to UI-supported range
-        lr = max(1e-5, min(1e-2, lr))
-        self.learning_rate = lr
+        lr_start, lr_end, lr_current = self._resolve_learning_rates()
+        self.learning_rate_start = lr_start
+        self.learning_rate_end = lr_end
+        self.learning_rate = lr_current
+        self.learning_rate_decay = self._compute_epsilon_decay(half_life)
+        self._sync_learning_rate_params()
         self.memory = deque(maxlen=10000) # Single replay memory for all trajectories
         self.total_samples_since_train = 0
         self.train_trigger_interval = 5000  # Train more frequently with smaller batches
@@ -69,8 +73,8 @@ class MonteCarloAgent:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Model
-        self.HL_SIZES = [128, 256, 512, 1024, 2048]
-        hl_size_idx = int(self.params.get('hl_size_idx', 1))
+        self.HL_SIZES = [16, 32, 64, 128, 256, 512, 1024, 2048]
+        hl_size_idx = int(self.params.get('hl_size_idx', 4))
         hl_size_idx = max(0, min(len(self.HL_SIZES) - 1, hl_size_idx))
         # Keep the shared params in-range so UI/agent stay aligned
         self.params['hl_size_idx'] = hl_size_idx
@@ -174,6 +178,35 @@ class MonteCarloAgent:
         step_count = max(0, min(self.EPSILON_HALF_LIFE_STEPS, step_count))
         snapped_exp = self.EPSILON_HALF_LIFE_MIN_EXP + step_count * self.EPSILON_HALF_LIFE_STEP_EXP
         return int(round(10 ** snapped_exp))
+
+    def _clamp_learning_rate(self, value, default):
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            value = default
+        return max(self.LR_MIN, min(self.LR_MAX, value))
+
+    def _resolve_learning_rates(self):
+        default_lr = 0.0001
+        legacy_lr = self.params.get('learning_rate', default_lr)
+        lr_start = self.params.get('learning_rate_start', legacy_lr)
+        lr_end = self.params.get('learning_rate_end', lr_start)
+        lr_current = self.params.get('learning_rate_current', lr_start)
+        lr_start = self._clamp_learning_rate(lr_start, default_lr)
+        lr_end = self._clamp_learning_rate(lr_end, default_lr)
+        if lr_start < lr_end:
+            lr_start, lr_end = lr_end, lr_start
+        lr_current = self._clamp_learning_rate(lr_current, lr_start)
+        if lr_current < lr_end or lr_current > lr_start:
+            lr_current = lr_start
+        return lr_start, lr_end, lr_current
+
+    def _sync_learning_rate_params(self):
+        self.params['learning_rate_start'] = round(self.learning_rate_start, 8)
+        self.params['learning_rate_end'] = round(self.learning_rate_end, 8)
+        self.params['learning_rate_current'] = round(self.learning_rate, 8)
+        if 'learning_rate' in self.params:
+            self.params['learning_rate'] = round(self.learning_rate, 8)
 
     def _compute_epsilon_decay(self, half_life_batches):
         half_life_batches = max(1.0, float(half_life_batches))
@@ -631,6 +664,19 @@ class MonteCarloAgent:
         # Enforce minimum exploration rate so printed epsilon matches behavior
         self.epsilon = max(self.epsilon, self.epsilon_min)
 
+        # Decay learning rate toward the configured end value
+        if self.learning_rate != self.learning_rate_end:
+            self.learning_rate = self.learning_rate_end + (self.learning_rate - self.learning_rate_end) * self.learning_rate_decay
+            floor_lr = min(self.learning_rate_start, self.learning_rate_end)
+            ceil_lr = max(self.learning_rate_start, self.learning_rate_end)
+            if self.learning_rate < floor_lr:
+                self.learning_rate = floor_lr
+            elif self.learning_rate > ceil_lr:
+                self.learning_rate = ceil_lr
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = self.learning_rate
+        self._sync_learning_rate_params()
+
 
 
 
@@ -678,9 +724,12 @@ class MonteCarloAgent:
         half_life = self._snap_epsilon_half_life(self.params.get('epsilon_half_life_batches', 10 ** 4.5))
         self.params['epsilon_half_life_batches'] = half_life
         self.epsilon_decay = self._compute_epsilon_decay(half_life)
-        lr = self.params.get('learning_rate', 0.0001)
-        lr = max(1e-5, min(1e-2, lr))
-        self.learning_rate = lr
+        lr_start, lr_end, lr_current = self._resolve_learning_rates()
+        self.learning_rate_start = lr_start
+        self.learning_rate_end = lr_end
+        self.learning_rate = lr_current
+        self.learning_rate_decay = self._compute_epsilon_decay(half_life)
+        self._sync_learning_rate_params()
         # If the floor increases, ensure current epsilon respects it
         self.epsilon = max(self.epsilon, self.epsilon_min)
         

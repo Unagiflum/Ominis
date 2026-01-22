@@ -280,10 +280,10 @@ class UI:
             arch_height = 145
             self.draw_group_box(padding, current_y, left_pane_width, arch_height, "Architecture")
             
-            # Hidden Layer Size (128, 256, 512, 1024, 2048)
-            hl_sizes = [128, 256, 512, 1024, 2048]
+            # Hidden Layer Size (16, 32, 64, 128, 256, 512, 1024, 2048)
+            hl_sizes = [16, 32, 64, 128, 256, 512, 1024, 2048]
             max_hl_idx = max(1, len(hl_sizes) - 1)
-            hl_size_idx = max(0, min(max_hl_idx, int(params.get('hl_size_idx', 1))))
+            hl_size_idx = max(0, min(max_hl_idx, int(params.get('hl_size_idx', 4))))
             hl_size_val = hl_sizes[hl_size_idx]
             
             slider_width = 170
@@ -480,7 +480,32 @@ class UI:
             if not is_training: slider_rects['epsilon_range_percent'] = s_rect
             sy += 45
 
-            # Randomness Half-life (10^2 - 10^7 in half-powers)
+            # Learning Rate Range (1e-6 - 1e-2, logarithmic)
+            lr_min = 1e-6
+            lr_max = 1e-2
+            def clamp_lr(val, default=0.001):
+                try:
+                    val = float(val)
+                except (TypeError, ValueError):
+                    val = default
+                return max(lr_min, min(lr_max, val))
+            def lr_to_norm(val):
+                val = clamp_lr(val)
+                lr_log_min = math.log10(lr_min)
+                lr_log_max = math.log10(lr_max)
+                return (math.log10(val) - lr_log_min) / (lr_log_max - lr_log_min)
+            lr_start_raw = params.get('learning_rate_start', params.get('learning_rate', 0.001))
+            lr_end_raw = params.get('learning_rate_end', lr_start_raw)
+            lr_start = clamp_lr(lr_start_raw)
+            lr_end = clamp_lr(lr_end_raw)
+            if lr_start < lr_end:
+                lr_start, lr_end = lr_end, lr_start
+            label = f"Learning Rate: {lr_start:.6f}->{lr_end:.6f}"
+            s_rect = self.draw_range_slider(slider_x, sy, slider_width, lr_to_norm(lr_end), lr_to_norm(lr_start), label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
+            if not is_training: slider_rects['learning_rate_range'] = s_rect
+            sy += 45
+
+            # R&L Half-life (10^2 - 10^7 in half-powers)
             half_life_raw = params.get('epsilon_half_life_batches', 10 ** 4.5)
             try:
                 half_life = float(half_life_raw)
@@ -493,22 +518,9 @@ class UI:
             step_count = max(0, min(10, step_count))
             snapped_exp = 2.0 + step_count * 0.5
             exp_label = f"{snapped_exp:.1f}"
-            label = f"Rand. half-life: 10^{exp_label}"
+            label = f"R&L Half-life: 10^{exp_label}"
             s_rect = self.draw_slider(slider_x, sy, slider_width, step_count / 10.0, label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
             if not is_training: slider_rects['epsilon_half_life_batches'] = s_rect
-            sy += 45
-            
-            # Learning Rate (1e-5 - 1e-2, logarithmic)
-            lr_min = 1e-5
-            lr_max = 1e-2
-            lr = params.get('learning_rate', 0.001)
-            lr = max(lr_min, min(lr_max, lr))
-            lr_log_min = math.log10(lr_min)
-            lr_log_max = math.log10(lr_max)
-            lr_log = math.log10(lr)
-            lr_norm = (lr_log - lr_log_min) / (lr_log_max - lr_log_min)
-            s_rect = self.draw_slider(slider_x, sy, slider_width, lr_norm, f"Learning Rate: {lr:.5f}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
-            if not is_training: slider_rects['learning_rate'] = s_rect
             sy += 45
             
             # Piece Size Range (1-5)
