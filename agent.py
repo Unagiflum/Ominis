@@ -30,6 +30,7 @@ class MonteCarloAgent:
     EPSILON_HALF_LIFE_STEPS = int((EPSILON_HALF_LIFE_MAX_EXP - EPSILON_HALF_LIFE_MIN_EXP) / EPSILON_HALF_LIFE_STEP_EXP)
     LR_MIN = 1e-6
     LR_MAX = 1e-2
+    CSV_HEADER = "Batch, Lines per Piece, Lines per Game, Epsilon, Learning Rate"
 
     def __init__(self, train_params):
         self.params = train_params
@@ -128,6 +129,7 @@ class MonteCarloAgent:
             resume_logging = True
             
         if resume_logging:
+            self._ensure_csv_header()
             try:
                 with open(self.csv_path, 'r') as f:
                     lines = f.readlines()
@@ -135,8 +137,8 @@ class MonteCarloAgent:
                         last_line = lines[-1].strip()
                         if last_line:
                             try:
-                                # Format: Batch, Lines per Piece, Lines per Game
-                                # 1000, 0.0600, 4.235
+                                # Format: Batch, Lines per Piece, Lines per Game, Epsilon, Learning Rate
+                                # 1000, 0.0600, 4.235, 0.70000, 0.001000
                                 last_batch = int(last_line.split(',')[0])
                                 self.training_steps = last_batch
                                 print(f"Resuming logging from batch {self.training_steps}")
@@ -148,9 +150,44 @@ class MonteCarloAgent:
             # Create new file with header (wiping if exists)
             try:
                 with open(self.csv_path, 'w') as f:
-                    f.write("Batch, Lines per Piece, Lines per Game\n")
+                    f.write(f"{self.CSV_HEADER}\n")
             except Exception as e:
                 print(f"Error creating CSV file: {e}")
+
+    def _ensure_csv_header(self):
+        import os
+
+        if not os.path.exists(self.csv_path):
+            return
+
+        try:
+            with open(self.csv_path, 'r') as f:
+                lines = f.readlines()
+        except Exception as e:
+            print(f"Error reading existing CSV: {e}")
+            return
+
+        if not lines:
+            updated_lines = [f"{self.CSV_HEADER}\n"]
+        else:
+            current_header = lines[0].strip()
+            if current_header == self.CSV_HEADER:
+                return
+            updated_lines = [f"{self.CSV_HEADER}\n"]
+            for line in lines[1:]:
+                if not line.strip():
+                    updated_lines.append(line)
+                    continue
+                line_no_nl = line.rstrip("\n")
+                if len(line_no_nl.split(',')) < 5:
+                    line_no_nl = f"{line_no_nl}, ,"
+                updated_lines.append(line_no_nl + "\n")
+
+        try:
+            with open(self.csv_path, 'w') as f:
+                f.writelines(updated_lines)
+        except Exception as e:
+            print(f"Error updating CSV header: {e}")
 
     def _snap_epsilon_percent(self, value):
         default_value = 5.0
@@ -709,7 +746,7 @@ class MonteCarloAgent:
         try:
             with open(self.csv_path, 'a') as f:
                 if write_header:
-                    f.write("Batch, Lines per Piece, Lines per Game, Epsilon, Learning Rate\n")
+                    f.write(f"{self.CSV_HEADER}\n")
                 
                 # Format: Batch, Lines_per_Piece, Lines_per_Game, Epsilon, Learning_Rate
                 f.write(f"{self.training_steps}, {avg_lpp:.4f}, {avg_lpg:.3f}, {self.epsilon:.5f}, {self.learning_rate:.6f}\n")

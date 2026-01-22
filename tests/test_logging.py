@@ -47,7 +47,7 @@ def test_logging():
     with open(csv_path, 'r') as f:
         header = f.readline().strip()
         lines = f.readlines()
-        if header != "Batch, Lines per Piece, Lines per Game":
+        if header != "Batch, Lines per Piece, Lines per Game, Epsilon, Learning Rate":
             print(f"FAIL: Incorrect header: {header}")
             return
         if len(lines) > 0:
@@ -68,7 +68,7 @@ def test_logging():
             return
         entry = lines[1].strip()
         print(f"Log Entry: {entry}")
-        if "1000, 0.5000, 10.000" not in entry:
+        if "1000, 0.5000, 10.000, 0.70000, 0.001000" not in entry:
              print("FAIL: Log entry content mismatch")
              return
     print("PASS: Logging correct")
