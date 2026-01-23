@@ -447,7 +447,7 @@ class UI:
                 reset_button_y,
                 reward_width,
                 reset_button_height,
-                "Reset to All Defaults",
+                "Reset All to Defaults",
                 reward_enabled,
                 mouse_pos
             )
@@ -658,6 +658,75 @@ class UI:
         resume_text = self.font.render("Press F1 to Resume", True, self.text_color)
         resume_rect = resume_text.get_rect(center=(x + width // 2, y + height // 2 + 60))
         self.screen.blit(resume_text, resume_rect)
+
+    def draw_choice_dialog(self, screen_width, screen_height, message_lines, choices, mouse_pos=None):
+        overlay = pygame.Surface((screen_width, screen_height))
+        overlay.set_alpha(180)
+        overlay.fill((0, 0, 0))
+        self.screen.blit(overlay, (0, 0))
+
+        text_font = self.font
+        button_font = self.small_font
+        padding = 20
+        line_gap = 6
+
+        line_surfaces = []
+        max_line_width = 0
+        total_text_height = 0
+        for line in message_lines:
+            surf = text_font.render(line, True, self.text_color)
+            line_surfaces.append(surf)
+            max_line_width = max(max_line_width, surf.get_width())
+            total_text_height += surf.get_height()
+        if line_surfaces:
+            total_text_height += line_gap * (len(line_surfaces) - 1)
+
+        button_height = 32
+        button_gap = 10
+        button_widths = []
+        for _, label in choices:
+            label_width = button_font.size(label)[0]
+            button_widths.append(max(120, label_width + 20))
+
+        total_buttons_width = sum(button_widths)
+        if button_widths:
+            total_buttons_width += button_gap * (len(button_widths) - 1)
+
+        panel_width = max(360, max_line_width + padding * 2, total_buttons_width + padding * 2)
+        panel_height = padding * 2 + total_text_height + 20 + button_height
+
+        panel_x = (screen_width - panel_width) // 2
+        panel_y = (screen_height - panel_height) // 2
+        panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+
+        pygame.draw.rect(self.screen, self.bg_color, panel_rect, border_radius=10)
+        pygame.draw.rect(self.screen, self.border_color, panel_rect, 2, border_radius=10)
+
+        current_y = panel_y + padding
+        for surf in line_surfaces:
+            self.screen.blit(surf, (panel_x + panel_width // 2 - surf.get_width() // 2, current_y))
+            current_y += surf.get_height() + line_gap
+
+        button_y = panel_y + panel_height - padding - button_height
+        start_x = panel_x + (panel_width - total_buttons_width) // 2
+
+        rects = {}
+        x = start_x
+        for (key, label), btn_width in zip(choices, button_widths):
+            rect = self.draw_button(
+                x,
+                button_y,
+                btn_width,
+                button_height,
+                label,
+                True,
+                mouse_pos,
+                font=button_font
+            )
+            rects[key] = rect
+            x += btn_width + button_gap
+
+        return rects
 
     def draw_checkbox(self, x, y, checked, label, mouse_pos=None, active=True, font=None, label_offset=30):
         # Box

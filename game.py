@@ -133,6 +133,10 @@ class Game:
         self.train_model_selected = None
         self.train_model_source = None
         self.train_model_arch = None
+        self.train_model_loaded_explicit_arch = None
+        self.train_preflight_active = False
+        self.train_preflight_rects = {}
+        self.train_preflight_model_path = None
 
         self.save_name_active = False
         self.save_name_text = ""
@@ -492,7 +496,7 @@ class Game:
             return True
         return False
 
-    def select_train_model(self, model_name):
+    def select_train_model(self, model_name, explicit=True):
         import os
         self.train_model_selected = model_name
         self.train_model_source = model_name
@@ -512,6 +516,8 @@ class Game:
             int(self.train_params.get('hl_size_idx', 1)),
             int(self.train_params.get('hl_count', 2))
         )
+        if explicit:
+            self.train_model_loaded_explicit_arch = self.train_model_arch
         self.epsilon_override_pending = False
 
     def initialize_train_menu(self):
@@ -523,13 +529,15 @@ class Game:
         self.train_model_selected = None
         self.train_model_source = None
         self.train_model_arch = None
+        self.train_model_loaded_explicit_arch = None
         self.epsilon_override_pending = False
         self._clear_reward_input()
+        self._clear_train_preflight()
 
         model_path = self.get_model_filename()
         if os.path.exists(model_path):
             model_name = os.path.basename(model_path)
-            self.select_train_model(model_name)
+            self.select_train_model(model_name, explicit=False)
 
     def reset_train_defaults(self):
         defaults = dict(self.train_default_params)
@@ -567,8 +575,10 @@ class Game:
         self.train_model_selected = None
         self.train_model_source = None
         self.train_model_arch = None
+        self.train_model_loaded_explicit_arch = None
         self.epsilon_override_pending = False
         self._clear_reward_input()
+        self._clear_train_preflight()
         self.active_slider = None
         self.active_slider_handle = None
         self.dragging_slider = False
@@ -588,6 +598,237 @@ class Game:
             return None
         count = max(1, min(4, count))
         return self.hl_sizes.index(size), count
+
+    def _clear_train_preflight(self):
+        self.train_preflight_active = False
+        self.train_preflight_rects = {}
+        self.train_preflight_model_path = None
+
+    def _current_train_arch(self):
+        return (
+            int(self.train_params.get('hl_size_idx', 1)),
+            int(self.train_params.get('hl_count', 2))
+        )
+
+    def _normalize_train_params_for_compare(self, params):
+        if not isinstance(params, dict):
+            return None
+
+        def get_value(key):
+            if key in params:
+                return params.get(key)
+            if key == 'epsilon_min' and 'epsilon_min_percent' in params:
+                try:
+                    return float(params.get('epsilon_min_percent')) / 100.0
+                except (TypeError, ValueError):
+                    return None
+            if key == 'epsilon_start' and 'epsilon_current_percent' in params:
+                try:
+                    return float(params.get('epsilon_current_percent')) / 100.0
+                except (TypeError, ValueError):
+                    return None
+            if key in ('learning_rate_start', 'learning_rate_end') and 'learning_rate' in params:
+                return params.get('learning_rate')
+            return None
+
+        def to_bool(value):
+            if isinstance(value, str):
+                lowered = value.strip().lower()
+                if lowered in ("true", "1", "yes", "y"):
+                    return True
+                if lowered in ("false", "0", "no", "n"):
+                    return False
+            return bool(value)
+
+        def to_int(value, min_val=None, max_val=None):
+            if value is None:
+                return None
+            try:
+                num = int(value)
+            except (TypeError, ValueError):
+                try:
+                    num = int(float(value))
+                except (TypeError, ValueError):
+                    return None
+            if min_val is not None:
+                num = max(min_val, num)
+            if max_val is not None:
+                num = min(max_val, num)
+            return num
+
+        def to_float(value, precision=None, zero_floor=False):
+            if value is None:
+                return None
+            try:
+                num = float(value)
+            except (TypeError, ValueError):
+                return None
+            if precision is not None:
+                num = round(num, precision)
+            if zero_floor and abs(num) < 0.0005:
+                num = 0.0
+            return num
+
+        reward_keys = set(self.REWARD_DEFAULTS.keys())
+        normalized = {}
+
+        normalized['hl_size_idx'] = to_int(get_value('hl_size_idx'), 0, len(self.hl_sizes) - 1)
+        normalized['hl_count'] = to_int(get_value('hl_count'), 1, 4)
+        normalized['min_size'] = to_int(get_value('min_size'), 1, 5)
+        normalized['max_size'] = to_int(get_value('max_size'), 1, 5)
+        normalized['big_piece_weight'] = to_int(get_value('big_piece_weight'), 1, 4)
+        normalized['pieces_tracked'] = to_int(get_value('pieces_tracked'), 1, 20)
+
+        normalized['short_games'] = to_bool(get_value('short_games')) if 'short_games' in params else None
+        normalized['reward_lines_squared'] = to_bool(get_value('reward_lines_squared')) if 'reward_lines_squared' in params else None
+
+        float_keys = [
+            'epsilon_min',
+            'epsilon_start',
+            'epsilon_half_life_batches',
+            'learning_rate_start',
+            'learning_rate_end'
+        ]
+        for key in float_keys:
+            normalized[key] = to_float(get_value(key), precision=6)
+
+        for key in reward_keys:
+            if key == 'reward_lines_squared':
+                continue
+            normalized[key] = to_float(get_value(key), precision=3, zero_floor=True)
+
+        return {k: v for k, v in normalized.items() if v is not None}
+
+    def _train_params_mismatch(self, loaded_params):
+        current_norm = self._normalize_train_params_for_compare(self.train_params)
+        loaded_norm = self._normalize_train_params_for_compare(loaded_params)
+        if not current_norm or not loaded_norm:
+            return False
+        for key, current_val in current_norm.items():
+            if key in loaded_norm and loaded_norm[key] != current_val:
+                return True
+        return False
+
+    def _maybe_open_train_preflight(self):
+        if self.train_preflight_active:
+            return True
+        current_arch = self._current_train_arch()
+        if self.train_model_loaded_explicit_arch == current_arch:
+            return False
+        model_path = self.get_model_filename()
+        import os
+        if not os.path.exists(model_path):
+            return False
+        checkpoint = self._load_model_checkpoint(model_path)
+        if not checkpoint:
+            return False
+        loaded_params = checkpoint.get('params')
+        if not isinstance(loaded_params, dict):
+            return False
+        if not self._train_params_mismatch(loaded_params):
+            return False
+        self.train_preflight_active = True
+        self.train_preflight_model_path = model_path
+        return True
+
+    def _start_training_from_menu(self, overwrite_existing=False):
+        agent = self.create_agent()
+        if agent:
+            self.train_dropdown_open = False
+            self.agent = agent
+            self.reset()
+            import os
+            current_arch = self._current_train_arch()
+            selected_arch = self.train_model_arch
+            selected_path = None
+            use_selected = False
+            if self.train_model_source:
+                selected_path = os.path.join("models", self.train_model_source)
+                use_selected = selected_arch == current_arch and os.path.exists(selected_path)
+
+            standard_path = self.get_model_filename()
+            model_file = selected_path if use_selected else standard_path
+
+            if overwrite_existing:
+                self.train_model_source = os.path.basename(standard_path)
+                self.train_model_selected = self.train_model_source
+                self.train_model_arch = current_arch
+                self.refresh_train_models()
+            elif not use_selected:
+                self.train_model_source = os.path.basename(standard_path)
+                self.train_model_selected = self.train_model_source
+                self.train_model_arch = current_arch
+                self.refresh_train_models()
+
+            if overwrite_existing:
+                try:
+                    self.agent.save(standard_path)
+                    self.refresh_train_models()
+                    print(f"Overwrote model file ({standard_path}).")
+                except Exception as e:
+                    print(f"Failed to overwrite model file {standard_path}: {e}")
+            elif model_file and os.path.exists(model_file):
+                try:
+                    self.agent.load(model_file)
+                    print(f"Loaded existing model {model_file}.")
+                    if self.train_model_source and not self._is_standard_model_name(self.train_model_source):
+                        standard_path = self.get_model_filename()
+                        try:
+                            self.agent.save(standard_path)
+                            self.train_model_source = os.path.basename(standard_path)
+                            self.train_model_selected = self.train_model_source
+                            self.train_model_arch = current_arch
+                            self.refresh_train_models()
+                            print(f"Saved model to standard filename ({standard_path}).")
+                        except Exception as e:
+                            print(f"Failed to save standard model copy {standard_path}: {e}")
+                except Exception as e:
+                    print(f"Failed to load model {model_file}: {e}")
+            else:
+                print(f"No existing model found for {standard_path}, starting fresh.")
+                if model_file == standard_path:
+                    try:
+                        self.agent.save(standard_path)
+                        self.refresh_train_models()
+                        print(f"Created new model file ({standard_path}).")
+                    except Exception as e:
+                        print(f"Failed to create new model file {standard_path}: {e}")
+
+            self._apply_epsilon_range(
+                self.train_params.get('epsilon_min', 0.0),
+                self.train_params.get('epsilon_start', 0.1),
+                apply_current=self.epsilon_override_pending
+            )
+            self.epsilon_override_pending = False
+
+            self.save_settings()
+
+            self.state = "TRAINING"
+            if not self.train_params['visual_mode']:
+                self.audio.stop() # No music in headless
+
+            # Initialize auto-save timer
+            self.last_save_time = pygame.time.get_ticks()
+        else:
+            self.agent = None
+            print("Training requires the AI dependencies; staying in the Train menu.")
+
+    def _handle_train_preflight_choice(self, choice):
+        if choice == "cancel":
+            self._clear_train_preflight()
+            return
+
+        import os
+        model_path = self.train_preflight_model_path or self.get_model_filename()
+        model_name = os.path.basename(model_path)
+        self._clear_train_preflight()
+
+        if choice == "load":
+            if os.path.exists(model_path):
+                self.select_train_model(model_name, explicit=True)
+            self._start_training_from_menu()
+        elif choice == "overwrite":
+            self._start_training_from_menu(overwrite_existing=True)
 
     def _is_standard_model_name(self, model_file):
         import os
@@ -1322,6 +1563,26 @@ class Game:
                             self.refresh_watch_models()
 
             elif self.state == "TRAIN_MENU":
+                if self.train_preflight_active:
+                    if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                        self._clear_train_preflight()
+                        continue
+                    if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                        mouse_pos = event.pos
+                        load_rect = self.train_preflight_rects.get("load") if self.train_preflight_rects else None
+                        overwrite_rect = self.train_preflight_rects.get("overwrite") if self.train_preflight_rects else None
+                        cancel_rect = self.train_preflight_rects.get("cancel") if self.train_preflight_rects else None
+                        if load_rect and load_rect.collidepoint(mouse_pos):
+                            self._handle_train_preflight_choice("load")
+                            continue
+                        if overwrite_rect and overwrite_rect.collidepoint(mouse_pos):
+                            self._handle_train_preflight_choice("overwrite")
+                            continue
+                        if cancel_rect and cancel_rect.collidepoint(mouse_pos):
+                            self._handle_train_preflight_choice("cancel")
+                            continue
+                    continue
+
                 if self.reward_input_active and event.type == pygame.KEYDOWN:
                     if self._handle_reward_input_key(event):
                         continue
@@ -1390,78 +1651,9 @@ class Game:
                         elif self.btn_train_defaults_rect and self.btn_train_defaults_rect.collidepoint(event.pos):
                             self.reset_train_defaults()
                         elif self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
-                            agent = self.create_agent()
-                            if agent:
-                                self.train_dropdown_open = False
-                                self.agent = agent
-                                self.reset()
-                                # Try to load existing model
-                                import os
-                                current_arch = (
-                                    int(self.train_params.get('hl_size_idx', 1)),
-                                    int(self.train_params.get('hl_count', 2))
-                                )
-                                selected_arch = self.train_model_arch
-                                selected_path = None
-                                use_selected = False
-                                if self.train_model_source:
-                                    selected_path = os.path.join("models", self.train_model_source)
-                                    use_selected = selected_arch == current_arch and os.path.exists(selected_path)
-
-                                standard_path = self.get_model_filename()
-                                model_file = selected_path if use_selected else standard_path
-
-                                if not use_selected:
-                                    self.train_model_source = os.path.basename(standard_path)
-                                    self.train_model_selected = self.train_model_source
-                                    self.train_model_arch = current_arch
-                                    self.refresh_train_models()
-
-                                if model_file and os.path.exists(model_file):
-                                    try:
-                                        self.agent.load(model_file)
-                                        print(f"Loaded existing model {model_file}.")
-                                        if self.train_model_source and not self._is_standard_model_name(self.train_model_source):
-                                            standard_path = self.get_model_filename()
-                                            try:
-                                                self.agent.save(standard_path)
-                                                self.train_model_source = os.path.basename(standard_path)
-                                                self.train_model_selected = self.train_model_source
-                                                self.train_model_arch = current_arch
-                                                self.refresh_train_models()
-                                                print(f"Saved model to standard filename ({standard_path}).")
-                                            except Exception as e:
-                                                print(f"Failed to save standard model copy {standard_path}: {e}")
-                                    except Exception as e:
-                                        print(f"Failed to load model {model_file}: {e}")
-                                else:
-                                    print(f"No existing model found for {standard_path}, starting fresh.")
-                                    if model_file == standard_path:
-                                        try:
-                                            self.agent.save(standard_path)
-                                            self.refresh_train_models()
-                                            print(f"Created new model file ({standard_path}).")
-                                        except Exception as e:
-                                            print(f"Failed to create new model file {standard_path}: {e}")
-
-                                self._apply_epsilon_range(
-                                    self.train_params.get('epsilon_min', 0.0),
-                                    self.train_params.get('epsilon_start', 0.1),
-                                    apply_current=self.epsilon_override_pending
-                                )
-                                self.epsilon_override_pending = False
-                                
-                                self.save_settings()
-                                
-                                self.state = "TRAINING"
-                                if not self.train_params['visual_mode']:
-                                    self.audio.stop() # No music in headless
-                                
-                                # Initialize auto-save timer
-                                self.last_save_time = pygame.time.get_ticks()
-                            else:
-                                self.agent = None
-                                print("Training requires the AI dependencies; staying in the Train menu.")
+                            if self._maybe_open_train_preflight():
+                                continue
+                            self._start_training_from_menu()
                         
                         # Check sliders
                         for name, rect in self.train_slider_rects.items():
@@ -2451,11 +2643,32 @@ class Game:
                 self.screen.blit(hint, (panel_x + panel_width // 2 - hint.get_width() // 2, panel_y + panel_height - 26))
             else:
                 self.save_name_rect = None
+
+            if self.train_preflight_active:
+                message_lines = [
+                    "A model with this architecture exists.",
+                    "Do you want to:"
+                ]
+                choices = [
+                    ("load", "Load Existing"),
+                    ("overwrite", "Overwrite Existing"),
+                    ("cancel", "Cancel")
+                ]
+                self.train_preflight_rects = self.ui.draw_choice_dialog(
+                    self.screen_width,
+                    self.screen_height,
+                    message_lines,
+                    choices,
+                    mouse_pos
+                )
+            else:
+                self.train_preflight_rects = {}
             
         else:
             self.train_dropdown_rect = None
             self.train_option_rects = []
             self.train_dropdown_open = False
+            self.train_preflight_rects = {}
 
             # Standard Padding
             padding = 20
