@@ -15,7 +15,7 @@ def test_logging():
         'hl_size_idx': 4, # 256
         'hl_count': 2,
         'gamma': 0.99,
-        'epsilon_min_percent': 10,
+        'epsilon_min': 0.10,
         'learning_rate_start': 0.001,
         'learning_rate_end': 0.001,
         'learning_rate_current': 0.001

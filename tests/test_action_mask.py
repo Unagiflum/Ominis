@@ -23,7 +23,7 @@ def test_action_mask():
         "hl_size_idx": 0,  # 16
         "hl_count": 1,
         "gamma": 0.7,
-        "epsilon_min_percent": 5,
+        "epsilon_min": 0.05,
         "learning_rate_start": 0.0001,
         "learning_rate_end": 0.0001,
         "learning_rate_current": 0.0001,

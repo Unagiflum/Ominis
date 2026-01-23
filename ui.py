@@ -459,9 +459,9 @@ class UI:
             self.draw_group_box(padding, current_y, left_pane_width, curriculum_height, "Curriculum")
             
             sy = current_y + 35
-            # Current / Min Rand. (0.0 plus 0.005% - 50% on a log scale)
-            epsilon_min = 0.005
-            epsilon_max = 50.0
+            # Current / Min Rand. (0.0 plus 0.00005 - 0.5 on a log scale)
+            epsilon_min = 0.00005
+            epsilon_max = 0.5
             def clamp_epsilon(val, default=5.0):
                 try:
                     val = float(val)
@@ -492,16 +492,16 @@ class UI:
                 decimals = max(0, 1 - exponent)
                 return f"{val:.{decimals}f}"
             def format_epsilon(val):
-                return format_two_sig(val / 100.0)
-            min_rand_raw = params.get('epsilon_min_percent', 5)
-            current_rand_raw = params.get('epsilon_current_percent', 20)
+                return format_two_sig(val)
+            min_rand_raw = params.get('epsilon_min', 0.05)
+            current_rand_raw = params.get('epsilon_start', 0.2)
             min_rand = clamp_epsilon(min_rand_raw)
             current_rand = clamp_epsilon(current_rand_raw)
             floor_rand = min(min_rand, current_rand)
             current_rand = max(min_rand, current_rand)
             label = f"Rand.: {format_epsilon(current_rand)}->{format_epsilon(floor_rand)}"
             s_rect = self.draw_range_slider(slider_x, sy, slider_width, epsilon_to_norm(floor_rand), epsilon_to_norm(current_rand), label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
-            if not is_training: slider_rects['epsilon_range_percent'] = s_rect
+            if not is_training: slider_rects['epsilon_range'] = s_rect
             sy += 45
 
             # Learning Rate Range (1e-6 - 1e-2, logarithmic)

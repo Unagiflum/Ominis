@@ -8,8 +8,8 @@ from ui import UI
 from audio import AudioPlayer
 
 class Game:
-    EPSILON_MIN_NONZERO_PERCENT = 0.005
-    EPSILON_MAX_PERCENT = 50.0
+    EPSILON_MIN_NONZERO = 0.00005
+    EPSILON_MAX = 0.5
     EPSILON_HALF_LIFE_MIN_EXP = 2.0
     EPSILON_HALF_LIFE_MAX_EXP = 7.0
     EPSILON_HALF_LIFE_STEP_EXP = 0.5
@@ -162,8 +162,8 @@ class Game:
             'visual_mode': True,
             'hl_size_idx': 1, # index into self.hl_sizes (0=16 ... 7=2048)
             'hl_count': 2,
-            'epsilon_min_percent': 0.0,
-            'epsilon_current_percent': 10.0,
+            'epsilon_min': 0.0,
+            'epsilon_start': 0.1,
             'epsilon_half_life_batches': int(round(10 ** 3.5)),
             'learning_rate_start': 0.002,
             'learning_rate_end': 0.002,
@@ -231,7 +231,38 @@ class Game:
             try:
                 with open("settings.json", "r") as f:
                     saved_params = json.load(f)
-                if self._apply_loaded_train_params(saved_params):
+                normalized_params = dict(saved_params)
+                epsilon_min_default = self.train_params.get('epsilon_min', 0.0)
+                epsilon_start_default = self.train_params.get('epsilon_start', 0.1)
+
+                if 'epsilon_min' in saved_params:
+                    try:
+                        normalized_params['epsilon_min'] = max(0.0, float(saved_params['epsilon_min']))
+                    except (TypeError, ValueError):
+                        normalized_params['epsilon_min'] = epsilon_min_default
+                elif 'epsilon_min_percent' in saved_params:
+                    try:
+                        normalized_params['epsilon_min'] = max(0.0, float(saved_params['epsilon_min_percent']) / 100.0)
+                    except (TypeError, ValueError):
+                        normalized_params['epsilon_min'] = epsilon_min_default
+
+                if 'epsilon_start' in saved_params:
+                    try:
+                        normalized_params['epsilon_start'] = max(0.0, float(saved_params['epsilon_start']))
+                    except (TypeError, ValueError):
+                        normalized_params['epsilon_start'] = epsilon_start_default
+                elif 'epsilon_current_percent' in saved_params:
+                    try:
+                        normalized_params['epsilon_start'] = max(0.0, float(saved_params['epsilon_current_percent']) / 100.0)
+                    except (TypeError, ValueError):
+                        normalized_params['epsilon_start'] = epsilon_start_default
+
+                normalized_params.pop('epsilon_min_percent', None)
+                normalized_params.pop('epsilon_current_percent', None)
+                # Current training state should not be restored from settings.json
+                normalized_params.pop('learning_rate_current', None)
+
+                if self._apply_loaded_train_params(normalized_params):
                     print("Loaded settings from settings.json")
             except Exception as e:
                 print(f"Failed to load settings: {e}")
@@ -321,6 +352,18 @@ class Game:
     def _apply_loaded_train_params(self, loaded_params):
         if not isinstance(loaded_params, dict):
             return False
+        if 'epsilon_min' not in loaded_params and 'epsilon_min_percent' in loaded_params:
+            loaded_params = dict(loaded_params)
+            try:
+                loaded_params['epsilon_min'] = max(0.0, float(loaded_params.get('epsilon_min_percent')) / 100.0)
+            except (TypeError, ValueError):
+                loaded_params['epsilon_min'] = self.train_params.get('epsilon_min', 0.0)
+        if 'epsilon_start' not in loaded_params and 'epsilon_current_percent' in loaded_params:
+            loaded_params = dict(loaded_params)
+            try:
+                loaded_params['epsilon_start'] = max(0.0, float(loaded_params.get('epsilon_current_percent')) / 100.0)
+            except (TypeError, ValueError):
+                loaded_params['epsilon_start'] = self.train_params.get('epsilon_start', 0.1)
         for k, v in loaded_params.items():
             if k in self.train_params:
                 self.train_params[k] = v
@@ -329,8 +372,9 @@ class Game:
         self.train_params['hl_count'] = max(1, min(4, int(self.train_params.get('hl_count', 2))))
         lr_start = self.train_params.get('learning_rate_start')
         lr_end = self.train_params.get('learning_rate_end')
-        lr_current = self.train_params.get('learning_rate_current')
         legacy_lr = loaded_params.get('learning_rate')
+        loaded_lr_current = loaded_params.get('learning_rate_current')
+        lr_current = loaded_lr_current if loaded_lr_current is not None else None
         if lr_start is None:
             lr_start = legacy_lr if legacy_lr is not None else lr_current
         if lr_end is None:
@@ -341,6 +385,8 @@ class Game:
             lr_start = 0.001
         if lr_end is None:
             lr_end = lr_start
+        if lr_current is None:
+            lr_current = lr_start
         self._apply_learning_rate_range(lr_start, lr_end, current=lr_current, reset_current=False)
         self.train_params['gamma'] = 1.0
         self.train_params['big_piece_weight'] = max(1, min(4, int(self.train_params.get('big_piece_weight', 1))))
@@ -350,8 +396,8 @@ class Game:
             self.train_params.get('max_size', 5)
         )
         self._apply_epsilon_range(
-            self.train_params.get('epsilon_min_percent', 5),
-            self.train_params.get('epsilon_current_percent', 20),
+            self.train_params.get('epsilon_min', 0.05),
+            self.train_params.get('epsilon_start', 0.2),
             apply_current=False
         )
         self.train_params['epsilon_half_life_batches'] = self._snap_epsilon_half_life(
@@ -504,8 +550,8 @@ class Game:
             self.train_params.get('max_size', 5)
         )
         self._apply_epsilon_range(
-            self.train_params.get('epsilon_min_percent', 5),
-            self.train_params.get('epsilon_current_percent', 20)
+            self.train_params.get('epsilon_min', 0.05),
+            self.train_params.get('epsilon_start', 0.2)
         )
         self.train_params['epsilon_half_life_batches'] = self._snap_epsilon_half_life(
             self.train_params.get('epsilon_half_life_batches', 10 ** 4.5)
@@ -580,9 +626,23 @@ class Game:
         if checkpoint:
             loaded_params = checkpoint.get('params')
             if isinstance(loaded_params, dict):
+                normalized_params = dict(loaded_params)
+                if 'epsilon_min' not in normalized_params and 'epsilon_min_percent' in normalized_params:
+                    try:
+                        normalized_params['epsilon_min'] = max(0.0, float(normalized_params.get('epsilon_min_percent')) / 100.0)
+                    except (TypeError, ValueError):
+                        normalized_params['epsilon_min'] = params.get('epsilon_min', 0.0)
+                if 'epsilon_start' not in normalized_params and 'epsilon_current_percent' in normalized_params:
+                    try:
+                        normalized_params['epsilon_start'] = max(0.0, float(normalized_params.get('epsilon_current_percent')) / 100.0)
+                    except (TypeError, ValueError):
+                        normalized_params['epsilon_start'] = params.get('epsilon_start', 0.1)
+                loaded_params = normalized_params
                 for key in params:
-                    if key in loaded_params:
-                        params[key] = loaded_params[key]
+                    if key in normalized_params:
+                        params[key] = normalized_params[key]
+        if not isinstance(loaded_params, dict) or loaded_params.get('learning_rate_current') is None:
+            params['learning_rate_current'] = params.get('learning_rate_start', params.get('learning_rate_current'))
 
         if not isinstance(loaded_params, dict):
             arch = self._parse_model_arch(model_file)
@@ -627,8 +687,24 @@ class Game:
     def save_settings(self):
         import json
         try:
+            settings_params = dict(self.train_params)
+            # Remove runtime-only values; they should live in model checkpoints.
+            settings_params.pop('learning_rate_current', None)
+            settings_params.pop('learning_rate', None)
+            if settings_params.get('epsilon_min') is None and 'epsilon_min_percent' in settings_params:
+                try:
+                    settings_params['epsilon_min'] = max(0.0, float(settings_params.get('epsilon_min_percent')) / 100.0)
+                except (TypeError, ValueError):
+                    settings_params['epsilon_min'] = 0.0
+            if settings_params.get('epsilon_start') is None and 'epsilon_current_percent' in settings_params:
+                try:
+                    settings_params['epsilon_start'] = max(0.0, float(settings_params.get('epsilon_current_percent')) / 100.0)
+                except (TypeError, ValueError):
+                    settings_params['epsilon_start'] = 0.0
+            settings_params.pop('epsilon_min_percent', None)
+            settings_params.pop('epsilon_current_percent', None)
             with open("settings.json", "w") as f:
-                json.dump(self.train_params, f)
+                json.dump(settings_params, f)
             print("Saved settings to settings.json")
         except Exception as e:
             print(f"Failed to save settings: {e}")
@@ -1369,8 +1445,8 @@ class Game:
                                             print(f"Failed to create new model file {standard_path}: {e}")
 
                                 self._apply_epsilon_range(
-                                    self.train_params.get('epsilon_min_percent', 5),
-                                    self.train_params.get('epsilon_current_percent', 20),
+                                    self.train_params.get('epsilon_min', 0.05),
+                                    self.train_params.get('epsilon_start', 0.2),
                                     apply_current=self.epsilon_override_pending
                                 )
                                 self.epsilon_override_pending = False
@@ -1391,7 +1467,7 @@ class Game:
                         for name, rect in self.train_slider_rects.items():
                             if rect.collidepoint(event.pos):
                                 self.active_slider = name
-                                if name == 'epsilon_range_percent':
+                                if name == 'epsilon_range':
                                     self.active_slider_handle = self._select_epsilon_handle(event.pos[0], rect)
                                 elif name == 'learning_rate_range':
                                     self.active_slider_handle = self._select_learning_rate_handle(event.pos[0], rect)
@@ -2748,43 +2824,42 @@ class Game:
         snapped_exp = self.EPSILON_HALF_LIFE_MIN_EXP + step_count * self.EPSILON_HALF_LIFE_STEP_EXP
         return int(round(10 ** snapped_exp))
 
-    def _snap_epsilon_percent(self, value):
-        default_value = 5.0
+    def _clamp_epsilon(self, value, default=0.05):
         try:
             value = float(value)
         except (TypeError, ValueError):
-            value = default_value
+            value = default
         if value <= 0.0:
             return 0.0
-        return max(self.EPSILON_MIN_NONZERO_PERCENT, min(self.EPSILON_MAX_PERCENT, value))
+        return max(self.EPSILON_MIN_NONZERO, min(self.EPSILON_MAX, value))
 
-    def _epsilon_percent_to_norm(self, value):
-        value = self._snap_epsilon_percent(value)
+    def _epsilon_to_norm(self, value):
+        value = self._clamp_epsilon(value)
         if value <= 0.0:
             return 0.0
-        log_min = math.log10(self.EPSILON_MIN_NONZERO_PERCENT)
-        log_max = math.log10(self.EPSILON_MAX_PERCENT)
+        log_min = math.log10(self.EPSILON_MIN_NONZERO)
+        log_max = math.log10(self.EPSILON_MAX)
         return (math.log10(value) - log_min) / (log_max - log_min)
 
-    def _epsilon_norm_to_percent(self, norm):
+    def _epsilon_norm_to_value(self, norm):
         norm = max(0.0, min(1.0, norm))
         if norm <= 0.0:
             return 0.0
-        log_min = math.log10(self.EPSILON_MIN_NONZERO_PERCENT)
-        log_max = math.log10(self.EPSILON_MAX_PERCENT)
+        log_min = math.log10(self.EPSILON_MIN_NONZERO)
+        log_max = math.log10(self.EPSILON_MAX)
         return 10 ** (log_min + norm * (log_max - log_min))
 
-    def _apply_epsilon_range(self, min_percent, current_percent, apply_current=True):
-        min_percent = self._snap_epsilon_percent(min_percent)
-        current_percent = self._snap_epsilon_percent(current_percent)
-        if min_percent > current_percent:
-            min_percent, current_percent = current_percent, min_percent
-        self.train_params['epsilon_min_percent'] = min_percent
-        self.train_params['epsilon_current_percent'] = current_percent
+    def _apply_epsilon_range(self, min_value, start_value, apply_current=True):
+        min_value = self._clamp_epsilon(min_value)
+        start_value = self._clamp_epsilon(start_value)
+        if min_value > start_value:
+            min_value, start_value = start_value, min_value
+        self.train_params['epsilon_min'] = min_value
+        self.train_params['epsilon_start'] = start_value
         if self.agent:
             self.agent.update_hyperparameters()
             if apply_current:
-                self.agent.epsilon = max(current_percent / 100.0, self.agent.epsilon_min)
+                self.agent.epsilon = max(start_value, self.agent.epsilon_min)
 
     def _clamp_learning_rate(self, value, default=0.001):
         try:
@@ -2826,13 +2901,13 @@ class Game:
             self.agent.update_hyperparameters()
 
     def _select_epsilon_handle(self, mouse_x, rect):
-        min_percent = self._snap_epsilon_percent(self.train_params.get('epsilon_min_percent', 5))
-        current_percent = self._snap_epsilon_percent(self.train_params.get('epsilon_current_percent', 20))
-        floor_percent = min(min_percent, current_percent)
-        current_percent = max(min_percent, current_percent)
-        floor_x = rect.x + self._epsilon_percent_to_norm(floor_percent) * rect.width
-        current_x = rect.x + self._epsilon_percent_to_norm(current_percent) * rect.width
-        if floor_percent == current_percent:
+        min_value = self._clamp_epsilon(self.train_params.get('epsilon_min', 0.05))
+        start_value = self._clamp_epsilon(self.train_params.get('epsilon_start', 0.2))
+        floor_value = min(min_value, start_value)
+        start_value = max(min_value, start_value)
+        floor_x = rect.x + self._epsilon_to_norm(floor_value) * rect.width
+        current_x = rect.x + self._epsilon_to_norm(start_value) * rect.width
+        if floor_value == start_value:
             return 'current' if mouse_x >= current_x else 'min'
         if abs(mouse_x - floor_x) <= abs(mouse_x - current_x):
             return 'min'
@@ -2883,22 +2958,22 @@ class Game:
             # Map 0-1 to 1, 2, 3, 4
             count = 1 + int(val * 3.99)
             self.train_params['hl_count'] = count
-        elif self.active_slider == 'epsilon_range_percent':
-            val_percent = self._epsilon_norm_to_percent(val)
-            min_percent = self.train_params.get('epsilon_min_percent', 5)
-            current_percent = self.train_params.get('epsilon_current_percent', 20)
-            prev_current = current_percent
+        elif self.active_slider == 'epsilon_range':
+            val_epsilon = self._epsilon_norm_to_value(val)
+            min_value = self.train_params.get('epsilon_min', 0.05)
+            start_value = self.train_params.get('epsilon_start', 0.2)
+            prev_current = start_value
             handle = self.active_slider_handle
             if handle is None:
                 handle = self._select_epsilon_handle(mouse_x, rect)
                 self.active_slider_handle = handle
             if handle == 'min':
-                min_percent = val_percent
+                min_value = val_epsilon
             else:
-                current_percent = val_percent
-            self._apply_epsilon_range(min_percent, current_percent)
+                start_value = val_epsilon
+            self._apply_epsilon_range(min_value, start_value)
             if handle == 'current':
-                new_current = self.train_params.get('epsilon_current_percent', prev_current)
+                new_current = self.train_params.get('epsilon_start', prev_current)
                 if new_current != prev_current:
                     self.epsilon_override_pending = True
         elif self.active_slider == 'epsilon_half_life_batches':

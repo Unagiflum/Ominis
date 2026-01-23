@@ -17,8 +17,8 @@ class MonteCarloAgent:
     2. Computes a single scalar Monte Carlo return R_piece at the end
     3. Trains Q(s, a) to predict R_piece for all (state, action) pairs in the trajectory
     """
-    EPSILON_MIN_NONZERO_PERCENT = 0.005
-    EPSILON_MAX_PERCENT = 50.0
+    EPSILON_MIN_NONZERO = 0.00005
+    EPSILON_MAX = 0.5
     EPSILON_HALF_LIFE_MIN_EXP = 2.0
     EPSILON_HALF_LIFE_MAX_EXP = 7.0
     EPSILON_HALF_LIFE_STEP_EXP = 0.5
@@ -35,14 +35,27 @@ class MonteCarloAgent:
         self.gamma = 1.0 # Discount factor (fixed)
         self.params['gamma'] = 1.0
         self.epsilon = 0.7 # Initial exploration rate
-        epsilon_min_percent = self._snap_epsilon_percent(self.params.get('epsilon_min_percent', 5))
-        self.params['epsilon_min_percent'] = epsilon_min_percent
-        self.epsilon_min = epsilon_min_percent / 100.0 # Minimum exploration rate (Default 5%)
-        epsilon_current_percent = self.params.get('epsilon_current_percent')
-        if epsilon_current_percent is not None:
-            epsilon_current_percent = self._snap_epsilon_percent(epsilon_current_percent)
-            self.params['epsilon_current_percent'] = epsilon_current_percent
-            self.epsilon = epsilon_current_percent / 100.0
+        epsilon_min_raw = self.params.get('epsilon_min')
+        if epsilon_min_raw is None and 'epsilon_min_percent' in self.params:
+            try:
+                epsilon_min_raw = float(self.params.get('epsilon_min_percent')) / 100.0
+            except (TypeError, ValueError):
+                epsilon_min_raw = None
+        epsilon_min = self._clamp_epsilon(epsilon_min_raw, default=0.05)
+        self.params['epsilon_min'] = epsilon_min
+        self.params.pop('epsilon_min_percent', None)
+        self.epsilon_min = epsilon_min # Minimum exploration rate (Default 0.05)
+        epsilon_start_raw = self.params.get('epsilon_start')
+        if epsilon_start_raw is None and 'epsilon_current_percent' in self.params:
+            try:
+                epsilon_start_raw = float(self.params.get('epsilon_current_percent')) / 100.0
+            except (TypeError, ValueError):
+                epsilon_start_raw = None
+        if epsilon_start_raw is not None:
+            epsilon_start = self._clamp_epsilon(epsilon_start_raw, default=self.epsilon)
+            self.params['epsilon_start'] = epsilon_start
+            self.params.pop('epsilon_current_percent', None)
+            self.epsilon = epsilon_start
         self.epsilon = max(self.epsilon, self.epsilon_min)
         half_life = self._snap_epsilon_half_life(self.params.get('epsilon_half_life_batches', 10 ** 4.5))
         self.params['epsilon_half_life_batches'] = half_life
@@ -184,15 +197,14 @@ class MonteCarloAgent:
         except Exception as e:
             print(f"Error updating CSV header: {e}")
 
-    def _snap_epsilon_percent(self, value):
-        default_value = 5.0
+    def _clamp_epsilon(self, value, default=0.05):
         try:
             value = float(value)
         except (TypeError, ValueError):
-            value = default_value
+            value = default
         if value <= 0.0:
             return 0.0
-        return max(self.EPSILON_MIN_NONZERO_PERCENT, min(self.EPSILON_MAX_PERCENT, value))
+        return max(self.EPSILON_MIN_NONZERO, min(self.EPSILON_MAX, value))
 
     def _snap_epsilon_half_life(self, value):
         default_exp = 4.5
@@ -753,9 +765,11 @@ class MonteCarloAgent:
         """Update hyperparameters from self.params (which are shared with UI)."""
         self.gamma = 1.0
         self.params['gamma'] = 1.0
-        epsilon_min_percent = self._snap_epsilon_percent(self.params.get('epsilon_min_percent', 5))
-        self.params['epsilon_min_percent'] = epsilon_min_percent
-        self.epsilon_min = epsilon_min_percent / 100.0
+        epsilon_min = self._clamp_epsilon(self.params.get('epsilon_min', 0.05))
+        self.params['epsilon_min'] = epsilon_min
+        self.params.pop('epsilon_min_percent', None)
+        self.params.pop('epsilon_current_percent', None)
+        self.epsilon_min = epsilon_min
         half_life = self._snap_epsilon_half_life(self.params.get('epsilon_half_life_batches', 10 ** 4.5))
         self.params['epsilon_half_life_batches'] = half_life
         self.epsilon_decay = self._compute_epsilon_decay(half_life)
@@ -798,8 +812,31 @@ class MonteCarloAgent:
         """
         checkpoint = torch.load(path, map_location=self.device)
         self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.epsilon = checkpoint['epsilon']
+        if 'optimizer_state_dict' in checkpoint:
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        loaded_lr = None
+        try:
+            if self.optimizer.param_groups:
+                loaded_lr = self.optimizer.param_groups[0].get('lr')
+        except Exception:
+            loaded_lr = None
+        if loaded_lr is not None:
+            try:
+                self.learning_rate = float(loaded_lr)
+            except (TypeError, ValueError):
+                pass
+        else:
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = self.learning_rate
+        self._sync_learning_rate_params()
+        loaded_epsilon = checkpoint.get('epsilon')
+        if loaded_epsilon is None:
+            loaded_epsilon = self.epsilon
+        try:
+            loaded_epsilon = float(loaded_epsilon)
+        except (TypeError, ValueError):
+            loaded_epsilon = self.epsilon
+        self.epsilon = max(loaded_epsilon, self.epsilon_min)
         
         # Note: We don't load params from file, we use the current UI params
         # This ensures the slider values control the architecture
