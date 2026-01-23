@@ -22,8 +22,8 @@ class Game:
         'reward_lines_squared': False,
         'reward_hole_decrease': 0.500,
         'reward_hole_increase': -0.500,
-        'reward_jaggedness_decrease': 0.050,
-        'reward_jaggedness_increase': -0.050,
+        'reward_jaggedness_decrease': 0.000,
+        'reward_jaggedness_increase': 0.000,
         'reward_pits_decrease': 0.050,
         'reward_pits_increase': -0.050,
         'reward_max_height_increase': -0.050,
@@ -159,18 +159,18 @@ class Game:
 
         # Training Parameters
         self.train_params = {
-            'visual_mode': True,
+            'visual_mode': False,
             'hl_size_idx': 1, # index into self.hl_sizes (0=16 ... 7=2048)
             'hl_count': 2,
             'epsilon_min': 0.0,
             'epsilon_start': 0.1,
-            'epsilon_half_life_batches': int(round(10 ** 3.5)),
-            'learning_rate_start': 0.002,
-            'learning_rate_end': 0.002,
-            'learning_rate_current': 0.002,
+            'epsilon_half_life_batches': 10000,
+            'learning_rate_start': 0.0025,
+            'learning_rate_end': 1e-06,
+            'learning_rate_current': 0.0025,
             'min_size': 1,
             'max_size': 4,
-            'big_piece_weight': 1,
+            'big_piece_weight': 4,
             'pieces_tracked': 1,
             'gamma': 1.0,
             'short_games': False,
@@ -203,12 +203,12 @@ class Game:
         self.load_settings()
         self.load_recording_settings()
         # Ensure hidden size index stays within the available architecture options
-        self.train_params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, int(self.train_params.get('hl_size_idx', 4))))
+        self.train_params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, int(self.train_params.get('hl_size_idx', 1))))
         self.train_params['gamma'] = 1.0
-        self.train_params['big_piece_weight'] = max(1, min(4, int(self.train_params.get('big_piece_weight', 1))))
+        self.train_params['big_piece_weight'] = max(1, min(4, int(self.train_params.get('big_piece_weight', 4))))
         self._apply_piece_size_range(
             self.train_params.get('min_size', 1),
-            self.train_params.get('max_size', 5)
+            self.train_params.get('max_size', 4)
         )
 
     def get_model_filename(self):
@@ -368,7 +368,7 @@ class Game:
             if k in self.train_params:
                 self.train_params[k] = v
 
-        self.train_params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, int(self.train_params.get('hl_size_idx', 4))))
+        self.train_params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, int(self.train_params.get('hl_size_idx', 1))))
         self.train_params['hl_count'] = max(1, min(4, int(self.train_params.get('hl_count', 2))))
         lr_start = self.train_params.get('learning_rate_start')
         lr_end = self.train_params.get('learning_rate_end')
@@ -382,26 +382,26 @@ class Game:
         if lr_current is None and legacy_lr is not None:
             lr_current = legacy_lr
         if lr_start is None:
-            lr_start = 0.001
+            lr_start = 0.0025
         if lr_end is None:
             lr_end = lr_start
         if lr_current is None:
             lr_current = lr_start
         self._apply_learning_rate_range(lr_start, lr_end, current=lr_current, reset_current=False)
         self.train_params['gamma'] = 1.0
-        self.train_params['big_piece_weight'] = max(1, min(4, int(self.train_params.get('big_piece_weight', 1))))
-        self.train_params['pieces_tracked'] = max(1, min(20, int(self.train_params.get('pieces_tracked', 10))))
+        self.train_params['big_piece_weight'] = max(1, min(4, int(self.train_params.get('big_piece_weight', 4))))
+        self.train_params['pieces_tracked'] = max(1, min(20, int(self.train_params.get('pieces_tracked', 1))))
         self._apply_piece_size_range(
             self.train_params.get('min_size', 1),
-            self.train_params.get('max_size', 5)
+            self.train_params.get('max_size', 4)
         )
         self._apply_epsilon_range(
-            self.train_params.get('epsilon_min', 0.05),
-            self.train_params.get('epsilon_start', 0.2),
+            self.train_params.get('epsilon_min', 0.0),
+            self.train_params.get('epsilon_start', 0.1),
             apply_current=False
         )
         self.train_params['epsilon_half_life_batches'] = self._snap_epsilon_half_life(
-            self.train_params.get('epsilon_half_life_batches', 10 ** 4.5)
+            self.train_params.get('epsilon_half_life_batches', 10 ** 4)
         )
         self._clamp_reward_params()
         return True
@@ -509,7 +509,7 @@ class Game:
             self.train_params['hl_size_idx'], self.train_params['hl_count'] = file_arch
             self.train_params['hl_count'] = max(1, min(4, int(self.train_params['hl_count'])))
         self.train_model_arch = (
-            int(self.train_params.get('hl_size_idx', 4)),
+            int(self.train_params.get('hl_size_idx', 1)),
             int(self.train_params.get('hl_count', 2))
         )
         self.epsilon_override_pending = False
@@ -536,25 +536,25 @@ class Game:
         self.train_params.clear()
         self.train_params.update(defaults)
 
-        self.train_params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, int(self.train_params.get('hl_size_idx', 4))))
+        self.train_params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, int(self.train_params.get('hl_size_idx', 1))))
         self.train_params['hl_count'] = max(1, min(4, int(self.train_params.get('hl_count', 2))))
-        lr_start = self.train_params.get('learning_rate_start', 0.001)
+        lr_start = self.train_params.get('learning_rate_start', 0.0025)
         lr_end = self.train_params.get('learning_rate_end', lr_start)
         lr_current = self.train_params.get('learning_rate_current', lr_start)
         self._apply_learning_rate_range(lr_start, lr_end, current=lr_current, reset_current=False)
         self.train_params['gamma'] = 1.0
-        self.train_params['big_piece_weight'] = max(1, min(4, int(self.train_params.get('big_piece_weight', 1))))
-        self.train_params['pieces_tracked'] = max(1, min(20, int(self.train_params.get('pieces_tracked', 10))))
+        self.train_params['big_piece_weight'] = max(1, min(4, int(self.train_params.get('big_piece_weight', 4))))
+        self.train_params['pieces_tracked'] = max(1, min(20, int(self.train_params.get('pieces_tracked', 1))))
         self._apply_piece_size_range(
             self.train_params.get('min_size', 1),
-            self.train_params.get('max_size', 5)
+            self.train_params.get('max_size', 4)
         )
         self._apply_epsilon_range(
-            self.train_params.get('epsilon_min', 0.05),
-            self.train_params.get('epsilon_start', 0.2)
+            self.train_params.get('epsilon_min', 0.0),
+            self.train_params.get('epsilon_start', 0.1)
         )
         self.train_params['epsilon_half_life_batches'] = self._snap_epsilon_half_life(
-            self.train_params.get('epsilon_half_life_batches', 10 ** 4.5)
+            self.train_params.get('epsilon_half_life_batches', 10 ** 4)
         )
         self._clamp_reward_params()
 
@@ -597,7 +597,7 @@ class Game:
         return self._parse_model_arch(model_file) is not None
 
     def _get_standard_model_base(self):
-        hl_size_idx = int(self.train_params.get('hl_size_idx', 4))
+        hl_size_idx = int(self.train_params.get('hl_size_idx', 1))
         hl_size_idx = max(0, min(len(self.hl_sizes) - 1, hl_size_idx))
         size = self.hl_sizes[hl_size_idx]
         count = max(1, min(4, int(self.train_params.get('hl_count', 2))))
@@ -606,7 +606,7 @@ class Game:
     def _get_train_dropdown_label(self):
         import os
         current_arch = (
-            int(self.train_params.get('hl_size_idx', 4)),
+            int(self.train_params.get('hl_size_idx', 1)),
             int(self.train_params.get('hl_count', 2))
         )
         if self.train_model_selected and self.train_model_arch == current_arch:
@@ -650,7 +650,7 @@ class Game:
                 params['hl_size_idx'], params['hl_count'] = arch
 
         try:
-            hl_size_idx = int(params.get('hl_size_idx', 4))
+            hl_size_idx = int(params.get('hl_size_idx', 1))
         except (TypeError, ValueError):
             hl_size_idx = 4
         params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, hl_size_idx))
@@ -929,7 +929,7 @@ class Game:
 
     def get_piece_history_length(self):
         """Get the number of pieces to track for reward history (1-20)."""
-        return max(1, min(20, self.train_params.get('pieces_tracked', 10)))
+        return max(1, min(20, self.train_params.get('pieces_tracked', 1)))
 
     def get_watch_ai_fall_speed(self):
         """
@@ -1124,8 +1124,8 @@ class Game:
         self.allowed_shape_weights = None
         if self.state == "TRAINING" or self.state == "TRAIN_MENU": # Use training params
              min_size = self.train_params.get('min_size', 1)
-             max_size = self.train_params.get('max_size', 5)
-             big_weight = max(1, min(4, int(self.train_params.get('big_piece_weight', 1))))
+             max_size = self.train_params.get('max_size', 4)
+             big_weight = max(1, min(4, int(self.train_params.get('big_piece_weight', 4))))
              # In training, include all groups but filter by size range.
              self.allowed_shapes = get_allowed_shapes(True, True, True, max_size, min_size=min_size)
              self.allowed_shape_weights = get_shape_weights(self.allowed_shapes, weight_base=big_weight)
@@ -1398,7 +1398,7 @@ class Game:
                                 # Try to load existing model
                                 import os
                                 current_arch = (
-                                    int(self.train_params.get('hl_size_idx', 4)),
+                                    int(self.train_params.get('hl_size_idx', 1)),
                                     int(self.train_params.get('hl_count', 2))
                                 )
                                 selected_arch = self.train_model_arch
@@ -1445,8 +1445,8 @@ class Game:
                                             print(f"Failed to create new model file {standard_path}: {e}")
 
                                 self._apply_epsilon_range(
-                                    self.train_params.get('epsilon_min', 0.05),
-                                    self.train_params.get('epsilon_start', 0.2),
+                                    self.train_params.get('epsilon_min', 0.0),
+                                    self.train_params.get('epsilon_start', 0.1),
                                     apply_current=self.epsilon_override_pending
                                 )
                                 self.epsilon_override_pending = False
@@ -2809,7 +2809,7 @@ class Game:
         self.train_params['max_size'] = max_size
 
     def _snap_epsilon_half_life(self, value):
-        default_exp = 4.5
+        default_exp = 4.0
         try:
             value = float(value)
         except (TypeError, ValueError):
@@ -2824,7 +2824,7 @@ class Game:
         snapped_exp = self.EPSILON_HALF_LIFE_MIN_EXP + step_count * self.EPSILON_HALF_LIFE_STEP_EXP
         return int(round(10 ** snapped_exp))
 
-    def _clamp_epsilon(self, value, default=0.05):
+    def _clamp_epsilon(self, value, default=0.0):
         try:
             value = float(value)
         except (TypeError, ValueError):
@@ -2861,7 +2861,7 @@ class Game:
             if apply_current:
                 self.agent.epsilon = max(start_value, self.agent.epsilon_min)
 
-    def _clamp_learning_rate(self, value, default=0.001):
+    def _clamp_learning_rate(self, value, default=0.0025):
         try:
             value = float(value)
         except (TypeError, ValueError):
@@ -2901,8 +2901,8 @@ class Game:
             self.agent.update_hyperparameters()
 
     def _select_epsilon_handle(self, mouse_x, rect):
-        min_value = self._clamp_epsilon(self.train_params.get('epsilon_min', 0.05))
-        start_value = self._clamp_epsilon(self.train_params.get('epsilon_start', 0.2))
+        min_value = self._clamp_epsilon(self.train_params.get('epsilon_min', 0.0))
+        start_value = self._clamp_epsilon(self.train_params.get('epsilon_start', 0.1))
         floor_value = min(min_value, start_value)
         start_value = max(min_value, start_value)
         floor_x = rect.x + self._epsilon_to_norm(floor_value) * rect.width
@@ -2914,7 +2914,7 @@ class Game:
         return 'current'
 
     def _select_learning_rate_handle(self, mouse_x, rect):
-        lr_start = self._clamp_learning_rate(self.train_params.get('learning_rate_start', 0.001))
+        lr_start = self._clamp_learning_rate(self.train_params.get('learning_rate_start', 0.0025))
         lr_end = self._clamp_learning_rate(self.train_params.get('learning_rate_end', lr_start))
         if lr_start < lr_end:
             lr_start, lr_end = lr_end, lr_start
@@ -2928,7 +2928,7 @@ class Game:
 
     def _select_piece_size_handle(self, mouse_x, rect):
         min_size = int(self.train_params.get('min_size', 1))
-        max_size = int(self.train_params.get('max_size', 5))
+        max_size = int(self.train_params.get('max_size', 4))
         min_size = max(1, min(5, min_size))
         max_size = max(1, min(5, max_size))
         floor_size = min(min_size, max_size)
@@ -2960,8 +2960,8 @@ class Game:
             self.train_params['hl_count'] = count
         elif self.active_slider == 'epsilon_range':
             val_epsilon = self._epsilon_norm_to_value(val)
-            min_value = self.train_params.get('epsilon_min', 0.05)
-            start_value = self.train_params.get('epsilon_start', 0.2)
+            min_value = self.train_params.get('epsilon_min', 0.0)
+            start_value = self.train_params.get('epsilon_start', 0.1)
             prev_current = start_value
             handle = self.active_slider_handle
             if handle is None:
@@ -2986,7 +2986,7 @@ class Game:
                 self.agent.update_hyperparameters()
         elif self.active_slider == 'learning_rate_range':
             lr_value = self._learning_rate_norm_to_value(val)
-            lr_start = self.train_params.get('learning_rate_start', 0.001)
+            lr_start = self.train_params.get('learning_rate_start', 0.0025)
             lr_end = self.train_params.get('learning_rate_end', lr_start)
             lr_current = self.train_params.get('learning_rate_current', lr_start)
             handle = self.active_slider_handle
@@ -3003,7 +3003,7 @@ class Game:
             # Map 0-1 to 1, 2, 3, 4, 5
             size = 1 + int(val * 4.99)
             min_size = int(self.train_params.get('min_size', 1))
-            max_size = int(self.train_params.get('max_size', 5))
+            max_size = int(self.train_params.get('max_size', 4))
             handle = self.active_slider_handle
             if handle is None:
                 handle = self._select_piece_size_handle(mouse_x, rect)

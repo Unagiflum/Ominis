@@ -284,7 +284,7 @@ class UI:
             # Hidden Layer Size (16, 32, 64, 128, 256, 512, 1024, 2048)
             hl_sizes = [16, 32, 64, 128, 256, 512, 1024, 2048]
             max_hl_idx = max(1, len(hl_sizes) - 1)
-            hl_size_idx = max(0, min(max_hl_idx, int(params.get('hl_size_idx', 4))))
+            hl_size_idx = max(0, min(max_hl_idx, int(params.get('hl_size_idx', 1))))
             hl_size_val = hl_sizes[hl_size_idx]
             
             slider_width = 170
@@ -462,7 +462,7 @@ class UI:
             # Current / Min Rand. (0.0 plus 0.00005 - 0.5 on a log scale)
             epsilon_min = 0.00005
             epsilon_max = 0.5
-            def clamp_epsilon(val, default=5.0):
+            def clamp_epsilon(val, default=0.0):
                 try:
                     val = float(val)
                 except (TypeError, ValueError):
@@ -493,8 +493,8 @@ class UI:
                 return f"{val:.{decimals}f}"
             def format_epsilon(val):
                 return format_two_sig(val)
-            min_rand_raw = params.get('epsilon_min', 0.05)
-            current_rand_raw = params.get('epsilon_start', 0.2)
+            min_rand_raw = params.get('epsilon_min', 0.0)
+            current_rand_raw = params.get('epsilon_start', 0.1)
             min_rand = clamp_epsilon(min_rand_raw)
             current_rand = clamp_epsilon(current_rand_raw)
             floor_rand = min(min_rand, current_rand)
@@ -507,7 +507,7 @@ class UI:
             # Learning Rate Range (1e-6 - 1e-2, logarithmic)
             lr_min = 1e-6
             lr_max = 1e-2
-            def clamp_lr(val, default=0.001):
+            def clamp_lr(val, default=0.0025):
                 try:
                     val = float(val)
                 except (TypeError, ValueError):
@@ -520,7 +520,7 @@ class UI:
                 return (math.log10(val) - lr_log_min) / (lr_log_max - lr_log_min)
             def format_lr(val):
                 return format_two_sig(val)
-            lr_start_raw = params.get('learning_rate_start', params.get('learning_rate', 0.001))
+            lr_start_raw = params.get('learning_rate_start', params.get('learning_rate', 0.0025))
             lr_end_raw = params.get('learning_rate_end', lr_start_raw)
             lr_start = clamp_lr(lr_start_raw)
             lr_end = clamp_lr(lr_end_raw)
@@ -532,11 +532,11 @@ class UI:
             sy += 45
 
             # R&L Half-life (10^2 - 10^7 in half-powers)
-            half_life_raw = params.get('epsilon_half_life_batches', 10 ** 4.5)
+            half_life_raw = params.get('epsilon_half_life_batches', 10 ** 4)
             try:
                 half_life = float(half_life_raw)
             except (TypeError, ValueError):
-                half_life = 10 ** 4.5
+                half_life = 10 ** 4
             half_life = max(1e2, min(1e7, half_life))
             exp = math.log10(half_life)
             exp = max(2.0, min(7.0, exp))
@@ -551,7 +551,7 @@ class UI:
             
             # Piece Size Range (1-5)
             min_size = params.get('min_size', 1)
-            max_size = params.get('max_size', 5)
+            max_size = params.get('max_size', 4)
             min_size = max(1, min(5, int(min_size)))
             max_size = max(1, min(5, int(max_size)))
             floor_size = min(min_size, max_size)
@@ -562,14 +562,14 @@ class UI:
             sy += 45
 
             # Big Piece Weight (1 - 4)
-            big_weight = params.get('big_piece_weight', 1)
+            big_weight = params.get('big_piece_weight', 4)
             big_weight = max(1, min(4, int(big_weight)))
             s_rect = self.draw_slider(slider_x, sy, slider_width, (big_weight - 1) / 3.0, f"Big Piece Weight: {big_weight}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
             if not is_training: slider_rects['big_piece_weight'] = s_rect
             sy += 45
             
             # Short Game Length (how many pieces before auto-restart in short games mode)
-            short_game_length = max(1, min(20, params.get('pieces_tracked', 10)))
+            short_game_length = max(1, min(20, params.get('pieces_tracked', 1)))
             s_rect = self.draw_slider(slider_x, sy, slider_width, (short_game_length - 1) / 19.0, f"Piece History: {short_game_length}", mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
             if not is_training: slider_rects['pieces_tracked'] = s_rect
             sy += 25

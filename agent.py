@@ -41,23 +41,24 @@ class MonteCarloAgent:
                 epsilon_min_raw = float(self.params.get('epsilon_min_percent')) / 100.0
             except (TypeError, ValueError):
                 epsilon_min_raw = None
-        epsilon_min = self._clamp_epsilon(epsilon_min_raw, default=0.05)
+        epsilon_min = self._clamp_epsilon(epsilon_min_raw, default=0.0)
         self.params['epsilon_min'] = epsilon_min
         self.params.pop('epsilon_min_percent', None)
-        self.epsilon_min = epsilon_min # Minimum exploration rate (Default 0.05)
+        self.epsilon_min = epsilon_min # Minimum exploration rate (Default 0.0)
         epsilon_start_raw = self.params.get('epsilon_start')
         if epsilon_start_raw is None and 'epsilon_current_percent' in self.params:
             try:
                 epsilon_start_raw = float(self.params.get('epsilon_current_percent')) / 100.0
             except (TypeError, ValueError):
                 epsilon_start_raw = None
-        if epsilon_start_raw is not None:
-            epsilon_start = self._clamp_epsilon(epsilon_start_raw, default=self.epsilon)
-            self.params['epsilon_start'] = epsilon_start
-            self.params.pop('epsilon_current_percent', None)
-            self.epsilon = epsilon_start
+        if epsilon_start_raw is None:
+            epsilon_start_raw = 0.1
+        epsilon_start = self._clamp_epsilon(epsilon_start_raw, default=self.epsilon)
+        self.params['epsilon_start'] = epsilon_start
+        self.params.pop('epsilon_current_percent', None)
+        self.epsilon = epsilon_start
         self.epsilon = max(self.epsilon, self.epsilon_min)
-        half_life = self._snap_epsilon_half_life(self.params.get('epsilon_half_life_batches', 10 ** 4.5))
+        half_life = self._snap_epsilon_half_life(self.params.get('epsilon_half_life_batches', 10 ** 4))
         self.params['epsilon_half_life_batches'] = half_life
         self.epsilon_decay = self._compute_epsilon_decay(half_life)
         lr_start, lr_end, lr_current = self._resolve_learning_rates()
@@ -83,7 +84,7 @@ class MonteCarloAgent:
         
         # Model
         self.HL_SIZES = [16, 32, 64, 128, 256, 512, 1024, 2048]
-        hl_size_idx = int(self.params.get('hl_size_idx', 4))
+        hl_size_idx = int(self.params.get('hl_size_idx', 1))
         hl_size_idx = max(0, min(len(self.HL_SIZES) - 1, hl_size_idx))
         # Keep the shared params in-range so UI/agent stay aligned
         self.params['hl_size_idx'] = hl_size_idx
@@ -197,7 +198,7 @@ class MonteCarloAgent:
         except Exception as e:
             print(f"Error updating CSV header: {e}")
 
-    def _clamp_epsilon(self, value, default=0.05):
+    def _clamp_epsilon(self, value, default=0.0):
         try:
             value = float(value)
         except (TypeError, ValueError):
@@ -207,7 +208,7 @@ class MonteCarloAgent:
         return max(self.EPSILON_MIN_NONZERO, min(self.EPSILON_MAX, value))
 
     def _snap_epsilon_half_life(self, value):
-        default_exp = 4.5
+        default_exp = 4.0
         try:
             value = float(value)
         except (TypeError, ValueError):
@@ -230,7 +231,7 @@ class MonteCarloAgent:
         return max(self.LR_MIN, min(self.LR_MAX, value))
 
     def _resolve_learning_rates(self):
-        default_lr = 0.0001
+        default_lr = 0.0025
         legacy_lr = self.params.get('learning_rate', default_lr)
         lr_start = self.params.get('learning_rate_start', legacy_lr)
         lr_end = self.params.get('learning_rate_end', lr_start)
@@ -765,12 +766,12 @@ class MonteCarloAgent:
         """Update hyperparameters from self.params (which are shared with UI)."""
         self.gamma = 1.0
         self.params['gamma'] = 1.0
-        epsilon_min = self._clamp_epsilon(self.params.get('epsilon_min', 0.05))
+        epsilon_min = self._clamp_epsilon(self.params.get('epsilon_min', 0.0))
         self.params['epsilon_min'] = epsilon_min
         self.params.pop('epsilon_min_percent', None)
         self.params.pop('epsilon_current_percent', None)
         self.epsilon_min = epsilon_min
-        half_life = self._snap_epsilon_half_life(self.params.get('epsilon_half_life_batches', 10 ** 4.5))
+        half_life = self._snap_epsilon_half_life(self.params.get('epsilon_half_life_batches', 10 ** 4))
         self.params['epsilon_half_life_batches'] = half_life
         self.epsilon_decay = self._compute_epsilon_decay(half_life)
         lr_start, lr_end, lr_current = self._resolve_learning_rates()
