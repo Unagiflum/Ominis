@@ -2813,8 +2813,12 @@ class Game:
         if reset_current or current is None:
             current = start
         current = self._clamp_learning_rate(current, default=start)
-        if current < end or current > start:
-            current = start
+        floor_lr = min(start, end)
+        ceil_lr = max(start, end)
+        if current < floor_lr:
+            current = floor_lr
+        elif current > ceil_lr:
+            current = ceil_lr
         self.train_params['learning_rate_start'] = round(start, 8)
         self.train_params['learning_rate_end'] = round(end, 8)
         self.train_params['learning_rate_current'] = round(current, 8)
@@ -2909,15 +2913,17 @@ class Game:
             lr_value = self._learning_rate_norm_to_value(val)
             lr_start = self.train_params.get('learning_rate_start', 0.001)
             lr_end = self.train_params.get('learning_rate_end', lr_start)
+            lr_current = self.train_params.get('learning_rate_current', lr_start)
             handle = self.active_slider_handle
             if handle is None:
                 handle = self._select_learning_rate_handle(mouse_x, rect)
                 self.active_slider_handle = handle
             if handle == 'end':
                 lr_end = lr_value
+                self._apply_learning_rate_range(lr_start, lr_end, current=lr_current, reset_current=False)
             else:
                 lr_start = lr_value
-            self._apply_learning_rate_range(lr_start, lr_end, reset_current=True)
+                self._apply_learning_rate_range(lr_start, lr_end, reset_current=True)
         elif self.active_slider == 'piece_size_range':
             # Map 0-1 to 1, 2, 3, 4, 5
             size = 1 + int(val * 4.99)
