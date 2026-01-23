@@ -79,6 +79,7 @@ class Game:
         self.include_tetrominoes = False
         self.include_ominis = False
         self.volume = 0.5
+        self.default_volume = self.volume
         self.allowed_shapes = []
         self.allowed_shape_weights = None
         self.active_min_size = 1
@@ -102,6 +103,7 @@ class Game:
         self.train_chk_rect = None
         self.btn_train_start_rect = None
         self.btn_train_save_rect = None
+        self.btn_train_defaults_rect = None
         self.train_visual_mode = True
         self.btn_quit_rect = None
         self.slider_rect = None
@@ -174,6 +176,7 @@ class Game:
             'short_games': False,
             **self.REWARD_DEFAULTS
         }
+        self.train_default_params = dict(self.train_params)
         self.train_slider_rects = {}
         self.active_slider = None
         self.active_slider_handle = None
@@ -482,6 +485,48 @@ class Game:
             model_name = os.path.basename(model_path)
             self.select_train_model(model_name)
 
+    def reset_train_defaults(self):
+        defaults = dict(self.train_default_params)
+        self.train_params.clear()
+        self.train_params.update(defaults)
+
+        self.train_params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, int(self.train_params.get('hl_size_idx', 4))))
+        self.train_params['hl_count'] = max(1, min(4, int(self.train_params.get('hl_count', 2))))
+        lr_start = self.train_params.get('learning_rate_start', 0.001)
+        lr_end = self.train_params.get('learning_rate_end', lr_start)
+        lr_current = self.train_params.get('learning_rate_current', lr_start)
+        self._apply_learning_rate_range(lr_start, lr_end, current=lr_current, reset_current=False)
+        self.train_params['gamma'] = 1.0
+        self.train_params['big_piece_weight'] = max(1, min(4, int(self.train_params.get('big_piece_weight', 1))))
+        self.train_params['pieces_tracked'] = max(1, min(20, int(self.train_params.get('pieces_tracked', 10))))
+        self._apply_piece_size_range(
+            self.train_params.get('min_size', 1),
+            self.train_params.get('max_size', 5)
+        )
+        self._apply_epsilon_range(
+            self.train_params.get('epsilon_min_percent', 5),
+            self.train_params.get('epsilon_current_percent', 20)
+        )
+        self.train_params['epsilon_half_life_batches'] = self._snap_epsilon_half_life(
+            self.train_params.get('epsilon_half_life_batches', 10 ** 4.5)
+        )
+        self._clamp_reward_params()
+
+        self.volume = self.default_volume
+        self.audio.set_volume(self.volume)
+
+        self.train_dropdown_open = False
+        self.train_dropdown_scroll = 0
+        self.train_option_rects = []
+        self.train_model_selected = None
+        self.train_model_source = None
+        self.train_model_arch = None
+        self.epsilon_override_pending = False
+        self._clear_reward_input()
+        self.active_slider = None
+        self.active_slider_handle = None
+        self.dragging_slider = False
+
     def _parse_model_arch(self, model_file):
         import os
         base = os.path.splitext(os.path.basename(model_file))[0]
@@ -525,15 +570,38 @@ class Game:
     def build_watch_agent(self, model_file):
         import os
         params = dict(self.train_params)
-        arch = self._parse_model_arch(model_file)
-        if arch:
-            params['hl_size_idx'], params['hl_count'] = arch
-        agent = self.create_agent(params_override=params)
-        if not agent:
-            return None
         model_path = os.path.join("models", model_file)
         if not os.path.exists(model_path):
             print(f"Model not found: {model_path}")
+            return None
+
+        checkpoint = self._load_model_checkpoint(model_path)
+        loaded_params = None
+        if checkpoint:
+            loaded_params = checkpoint.get('params')
+            if isinstance(loaded_params, dict):
+                for key in params:
+                    if key in loaded_params:
+                        params[key] = loaded_params[key]
+
+        if not isinstance(loaded_params, dict):
+            arch = self._parse_model_arch(model_file)
+            if arch:
+                params['hl_size_idx'], params['hl_count'] = arch
+
+        try:
+            hl_size_idx = int(params.get('hl_size_idx', 4))
+        except (TypeError, ValueError):
+            hl_size_idx = 4
+        params['hl_size_idx'] = max(0, min(len(self.hl_sizes) - 1, hl_size_idx))
+        try:
+            hl_count = int(params.get('hl_count', 2))
+        except (TypeError, ValueError):
+            hl_count = 2
+        params['hl_count'] = max(1, min(4, hl_count))
+
+        agent = self.create_agent(params_override=params)
+        if not agent:
             return None
         try:
             agent.load(model_path)
@@ -1243,6 +1311,8 @@ class Game:
                             self.train_dropdown_open = False
                         elif hasattr(self, 'short_games_chk_rect') and self.short_games_chk_rect and self.short_games_chk_rect.collidepoint(event.pos):
                             self.train_params['short_games'] = not self.train_params.get('short_games', False)
+                        elif self.btn_train_defaults_rect and self.btn_train_defaults_rect.collidepoint(event.pos):
+                            self.reset_train_defaults()
                         elif self.btn_train_start_rect and self.btn_train_start_rect.collidepoint(event.pos):
                             agent = self.create_agent()
                             if agent:
@@ -2171,7 +2241,7 @@ class Game:
             save_active = self.agent is not None
             (self.btn_back_rect, self.train_chk_rect, self.btn_train_start_rect, self.btn_train_save_rect,
              self.train_slider_rects, self.train_slider_rect, self.short_games_chk_rect, train_dropdown_anchor,
-             self.reward_input_rects, self.reward_lines_squared_rect) = self.ui.draw_train_menu(
+             self.reward_input_rects, self.reward_lines_squared_rect, self.btn_train_defaults_rect) = self.ui.draw_train_menu(
                 self.screen_width,
                 self.screen_height,
                 self.train_params,

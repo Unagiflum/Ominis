@@ -271,6 +271,7 @@ class UI:
         dropdown_rect = None
         reward_input_rects = {}
         reward_lines_squared_rect = None
+        reset_defaults_rect = None
 
         show_training_board = is_training and params.get('visual_mode', False)
         show_settings = not show_training_board
@@ -439,6 +440,18 @@ class UI:
 
                 row_y += row_step
 
+            reset_button_height = 34
+            reset_button_y = reward_y + reward_height + 15
+            reset_defaults_rect = self.draw_button(
+                reward_x,
+                reset_button_y,
+                reward_width,
+                reset_button_height,
+                "Reset to All Defaults",
+                reward_enabled,
+                mouse_pos
+            )
+
             current_y += arch_height + 15
             
             # --- Curriculum Group ---
@@ -601,7 +614,8 @@ class UI:
             self.draw_grid(grid, offset_x, offset_y)
         
         return (btn_back_rect, chk_rect, btn_start_rect, btn_save_rect, slider_rects, vol_slider_rect,
-                short_games_chk_rect, dropdown_rect, reward_input_rects, reward_lines_squared_rect)
+                short_games_chk_rect, dropdown_rect, reward_input_rects, reward_lines_squared_rect,
+                reset_defaults_rect)
 
 
     def draw_group_box(self, x, y, width, height, title):
