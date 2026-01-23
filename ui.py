@@ -446,36 +446,47 @@ class UI:
             self.draw_group_box(padding, current_y, left_pane_width, curriculum_height, "Curriculum")
             
             sy = current_y + 35
-            # Current / Min Rand. % (0.000% plus 0.005% - 50% in 1-2-5 steps)
-            epsilon_values = [
-                0.0, 0.005, 0.01, 0.02, 0.05,
-                0.1, 0.2, 0.5, 1.0, 2.0,
-                5.0, 10.0, 20.0, 50.0
-            ]
-            def snap_epsilon(val):
-                default_value = 5.0
+            # Current / Min Rand. (0.0 plus 0.005% - 50% on a log scale)
+            epsilon_min = 0.005
+            epsilon_max = 50.0
+            def clamp_epsilon(val, default=5.0):
                 try:
                     val = float(val)
                 except (TypeError, ValueError):
-                    val = default_value
+                    val = default
                 if val <= 0.0:
                     return 0.0
-                return min(epsilon_values[1:], key=lambda v: abs(v - val))
-            def epsilon_index(val):
-                return min(range(len(epsilon_values)), key=lambda i: abs(epsilon_values[i] - val))
+                return max(epsilon_min, min(epsilon_max, val))
             def epsilon_to_norm(val):
-                return epsilon_index(snap_epsilon(val)) / (len(epsilon_values) - 1)
-            def format_percent(val):
+                val = clamp_epsilon(val)
                 if val <= 0.0:
-                    return "0.000"
-                return f"{val:g}"
+                    return 0.0
+                log_min = math.log10(epsilon_min)
+                log_max = math.log10(epsilon_max)
+                return (math.log10(val) - log_min) / (log_max - log_min)
+            sig_threshold = 1e-4
+            def format_two_sig(val):
+                try:
+                    val = float(val)
+                except (TypeError, ValueError):
+                    return "0.00"
+                if val == 0.0:
+                    return "0.00"
+                abs_val = abs(val)
+                if abs_val < sig_threshold:
+                    return f"{val:.1e}"
+                exponent = math.floor(math.log10(abs_val))
+                decimals = max(0, 1 - exponent)
+                return f"{val:.{decimals}f}"
+            def format_epsilon(val):
+                return format_two_sig(val / 100.0)
             min_rand_raw = params.get('epsilon_min_percent', 5)
             current_rand_raw = params.get('epsilon_current_percent', 20)
-            min_rand = snap_epsilon(min_rand_raw)
-            current_rand = snap_epsilon(current_rand_raw)
+            min_rand = clamp_epsilon(min_rand_raw)
+            current_rand = clamp_epsilon(current_rand_raw)
             floor_rand = min(min_rand, current_rand)
             current_rand = max(min_rand, current_rand)
-            label = f"Randomness: {format_percent(current_rand)}%->{format_percent(floor_rand)}%"
+            label = f"Rand.: {format_epsilon(current_rand)}->{format_epsilon(floor_rand)}"
             s_rect = self.draw_range_slider(slider_x, sy, slider_width, epsilon_to_norm(floor_rand), epsilon_to_norm(current_rand), label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
             if not is_training: slider_rects['epsilon_range_percent'] = s_rect
             sy += 45
@@ -494,13 +505,15 @@ class UI:
                 lr_log_min = math.log10(lr_min)
                 lr_log_max = math.log10(lr_max)
                 return (math.log10(val) - lr_log_min) / (lr_log_max - lr_log_min)
+            def format_lr(val):
+                return format_two_sig(val)
             lr_start_raw = params.get('learning_rate_start', params.get('learning_rate', 0.001))
             lr_end_raw = params.get('learning_rate_end', lr_start_raw)
             lr_start = clamp_lr(lr_start_raw)
             lr_end = clamp_lr(lr_end_raw)
             if lr_start < lr_end:
                 lr_start, lr_end = lr_end, lr_start
-            label = f"Lrn Rt: {lr_start:.6f}->{lr_end:.6f}"
+            label = f"L.Rate: {format_lr(lr_start)}->{format_lr(lr_end)}"
             s_rect = self.draw_range_slider(slider_x, sy, slider_width, lr_to_norm(lr_end), lr_to_norm(lr_start), label, mouse_pos, self.small_font, active=not is_training, bar_offset_y=slider_bar_offset)
             if not is_training: slider_rects['learning_rate_range'] = s_rect
             sy += 45

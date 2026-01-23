@@ -8,13 +8,8 @@ from ui import UI
 from audio import AudioPlayer
 
 class Game:
+    EPSILON_MIN_NONZERO_PERCENT = 0.005
     EPSILON_MAX_PERCENT = 50.0
-    EPSILON_STEP_PERCENT = 0.5
-    EPSILON_PERCENT_VALUES = (
-        0.0, 0.005, 0.01, 0.02, 0.05,
-        0.1, 0.2, 0.5, 1.0, 2.0,
-        5.0, 10.0, 20.0, 50.0
-    )
     EPSILON_HALF_LIFE_MIN_EXP = 2.0
     EPSILON_HALF_LIFE_MAX_EXP = 7.0
     EPSILON_HALF_LIFE_STEP_EXP = 0.5
@@ -25,13 +20,13 @@ class Game:
         'reward_game_over': -2.0,
         'reward_lines_cleared': 0.075,
         'reward_lines_squared': False,
-        'reward_hole_decrease': 0.490,
+        'reward_hole_decrease': 0.500,
         'reward_hole_increase': -0.500,
-        'reward_jaggedness_decrease': 0.049,
+        'reward_jaggedness_decrease': 0.050,
         'reward_jaggedness_increase': -0.050,
-        'reward_pits_decrease': 0.049,
+        'reward_pits_decrease': 0.050,
         'reward_pits_increase': -0.050,
-        'reward_max_height_increase': 0.000,
+        'reward_max_height_increase': -0.050,
         'reward_height_std_decrease': 0.000,
         'reward_height_std_increase': 0.000
     }
@@ -163,18 +158,18 @@ class Game:
         # Training Parameters
         self.train_params = {
             'visual_mode': True,
-            'hl_size_idx': 4, # index into self.hl_sizes (0=16 ... 7=2048)
+            'hl_size_idx': 1, # index into self.hl_sizes (0=16 ... 7=2048)
             'hl_count': 2,
-            'epsilon_min_percent': 5,
-            'epsilon_current_percent': 20,
-            'epsilon_half_life_batches': int(round(10 ** 4.5)),
-            'learning_rate_start': 0.001,
-            'learning_rate_end': 0.001,
-            'learning_rate_current': 0.001,
+            'epsilon_min_percent': 0.0,
+            'epsilon_current_percent': 10.0,
+            'epsilon_half_life_batches': int(round(10 ** 3.5)),
+            'learning_rate_start': 0.002,
+            'learning_rate_end': 0.002,
+            'learning_rate_current': 0.002,
             'min_size': 1,
-            'max_size': 5,
+            'max_size': 4,
             'big_piece_weight': 1,
-            'pieces_tracked': 10,
+            'pieces_tracked': 1,
             'gamma': 1.0,
             'short_games': False,
             **self.REWARD_DEFAULTS
@@ -2691,23 +2686,23 @@ class Game:
             value = default_value
         if value <= 0.0:
             return 0.0
-        values = self.EPSILON_PERCENT_VALUES[1:]
-        return min(values, key=lambda v: abs(v - value))
-
-    def _epsilon_index(self, value):
-        values = self.EPSILON_PERCENT_VALUES
-        return min(range(len(values)), key=lambda i: abs(values[i] - value))
+        return max(self.EPSILON_MIN_NONZERO_PERCENT, min(self.EPSILON_MAX_PERCENT, value))
 
     def _epsilon_percent_to_norm(self, value):
         value = self._snap_epsilon_percent(value)
-        idx = self._epsilon_index(value)
-        return idx / (len(self.EPSILON_PERCENT_VALUES) - 1)
+        if value <= 0.0:
+            return 0.0
+        log_min = math.log10(self.EPSILON_MIN_NONZERO_PERCENT)
+        log_max = math.log10(self.EPSILON_MAX_PERCENT)
+        return (math.log10(value) - log_min) / (log_max - log_min)
 
     def _epsilon_norm_to_percent(self, norm):
-        values = self.EPSILON_PERCENT_VALUES
-        idx = int(round(norm * (len(values) - 1)))
-        idx = max(0, min(len(values) - 1, idx))
-        return values[idx]
+        norm = max(0.0, min(1.0, norm))
+        if norm <= 0.0:
+            return 0.0
+        log_min = math.log10(self.EPSILON_MIN_NONZERO_PERCENT)
+        log_max = math.log10(self.EPSILON_MAX_PERCENT)
+        return 10 ** (log_min + norm * (log_max - log_min))
 
     def _apply_epsilon_range(self, min_percent, current_percent, apply_current=True):
         min_percent = self._snap_epsilon_percent(min_percent)

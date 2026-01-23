@@ -17,13 +17,8 @@ class MonteCarloAgent:
     2. Computes a single scalar Monte Carlo return R_piece at the end
     3. Trains Q(s, a) to predict R_piece for all (state, action) pairs in the trajectory
     """
+    EPSILON_MIN_NONZERO_PERCENT = 0.005
     EPSILON_MAX_PERCENT = 50.0
-    EPSILON_STEP_PERCENT = 0.5
-    EPSILON_PERCENT_VALUES = (
-        0.0, 0.005, 0.01, 0.02, 0.05,
-        0.1, 0.2, 0.5, 1.0, 2.0,
-        5.0, 10.0, 20.0, 50.0
-    )
     EPSILON_HALF_LIFE_MIN_EXP = 2.0
     EPSILON_HALF_LIFE_MAX_EXP = 7.0
     EPSILON_HALF_LIFE_STEP_EXP = 0.5
@@ -197,8 +192,7 @@ class MonteCarloAgent:
             value = default_value
         if value <= 0.0:
             return 0.0
-        values = self.EPSILON_PERCENT_VALUES[1:]
-        return min(values, key=lambda v: abs(v - value))
+        return max(self.EPSILON_MIN_NONZERO_PERCENT, min(self.EPSILON_MAX_PERCENT, value))
 
     def _snap_epsilon_half_life(self, value):
         default_exp = 4.5
