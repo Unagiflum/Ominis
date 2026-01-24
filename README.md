@@ -38,6 +38,27 @@ pip install -r requirements.txt
 python main.py
 ```
 
+## Build (Windows, PyInstaller)
+This produces a console-enabled build with full functionality (audio, video recording, AI).
+
+Option A: run the script
+```bash
+.\build.ps1
+```
+
+Option B: run the command directly
+```bash
+pyinstaller --noconfirm --clean --name Ominis --onedir --console \
+  --add-data "assets;assets" \
+  --add-data "settings.json;." \
+  --add-data "recording.json;." \
+  --collect-all pygame \
+  --collect-binaries av \
+  main.py
+```
+
+Output: `dist/Ominis/Ominis.exe`
+
 ## Controls
 - Arrow keys: move left/right and soft drop
 - Comma/period: rotate
