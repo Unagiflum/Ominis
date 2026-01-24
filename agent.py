@@ -584,9 +584,9 @@ class MonteCarloAgent:
         
         if total_pieces_hist > 0:
             avg_lpp = total_lines_hist / total_pieces_hist
-            lpp_str += f" (ave: {avg_lpp:.4f})"
+            lpp_str += f" ({avg_lpp:.4f})"
         else:
-            lpp_str += " (ave: N/A)"
+            lpp_str += " (N/A)"
 
         if gameovers > 0:
             lines_per_game = lines / gameovers
@@ -599,15 +599,15 @@ class MonteCarloAgent:
             
         if total_gameovers_hist > 0:
             avg_lpg = total_lines_hist / total_gameovers_hist
-            lines_per_game_str += f" (ave: {avg_lpg:.3f})"
+            lines_per_game_str += f" ({avg_lpg:.3f})"
         else:
-            lines_per_game_str += " (ave: N/A)"
+            lines_per_game_str += " (N/A)"
 
         epsilon_str = f"{self.epsilon:.5f}"
         lr_str = f"{self.learning_rate:.6f}"
         print(
-            f"{inference_moves} mvs, {pieces} pcs, {lines} lines, {gameovers} Game Overs | "
-            f"LPP = {lpp_str} | LPG = {lines_per_game_str} | Epsilon = {epsilon_str} | Lrn Rate = {lr_str}"
+            f"{inference_moves} mvs, {pieces} pcs, {lines} lines, {gameovers} Games | "
+            f"LPP = {lpp_str} | LPG = {lines_per_game_str} | Epsilon = {epsilon_str} | LR = {lr_str}"
         )
 
         self.total_samples_since_train = 0
