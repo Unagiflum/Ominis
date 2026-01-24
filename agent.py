@@ -139,22 +139,10 @@ class MonteCarloAgent:
             
         if resume_logging:
             self._ensure_csv_header()
-            try:
-                with open(self.csv_path, 'r') as f:
-                    lines = f.readlines()
-                    if len(lines) > 1:
-                        last_line = lines[-1].strip()
-                        if last_line:
-                            try:
-                                # Format: Batch, Lines per Piece, Lines per Game, Epsilon, Learning Rate
-                                # 1000, 0.0600, 4.235, 0.70000, 0.001000
-                                last_batch = int(last_line.split(',')[0])
-                                self.training_steps = last_batch
-                                print(f"Resuming logging from batch {self.training_steps}")
-                            except ValueError:
-                                print("Could not parse last batch from CSV, starting at 0")
-            except Exception as e:
-                print(f"Error reading existing CSV: {e}")
+            last_batch = self._read_last_batch_from_csv()
+            if last_batch is not None:
+                self.training_steps = last_batch
+                print(f"Resuming logging from batch {self.training_steps}")
         else:
             # Create new file with header (wiping if exists)
             try:
@@ -197,6 +185,46 @@ class MonteCarloAgent:
                 f.writelines(updated_lines)
         except Exception as e:
             print(f"Error updating CSV header: {e}")
+
+    def _coerce_training_steps(self, value):
+        if value is None:
+            return None
+        raw_value = value
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            try:
+                value = int(float(raw_value))
+            except (TypeError, ValueError):
+                return None
+        if value < 0:
+            return None
+        return value
+
+    def _read_last_batch_from_csv(self):
+        import os
+
+        if not os.path.exists(self.csv_path):
+            return None
+        try:
+            with open(self.csv_path, 'r') as f:
+                lines = f.readlines()
+        except Exception as e:
+            print(f"Error reading existing CSV: {e}")
+            return None
+        if len(lines) <= 1:
+            return None
+        for line in reversed(lines[1:]):
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(',')
+            if not parts:
+                continue
+            value = self._coerce_training_steps(parts[0].strip())
+            if value is not None:
+                return value
+        return None
 
     def _clamp_epsilon(self, value, default=0.0):
         try:
@@ -801,7 +829,8 @@ class MonteCarloAgent:
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'epsilon': self.epsilon,
-            'params': self.params
+            'params': self.params,
+            'training_steps': self.training_steps
         }, path)
 
     def load(self, path):
@@ -838,6 +867,16 @@ class MonteCarloAgent:
         except (TypeError, ValueError):
             loaded_epsilon = self.epsilon
         self.epsilon = max(loaded_epsilon, self.epsilon_min)
+        loaded_steps = None
+        if isinstance(checkpoint, dict):
+            loaded_steps = checkpoint.get('training_steps')
+        loaded_steps = self._coerce_training_steps(loaded_steps)
+        if loaded_steps is not None:
+            self.training_steps = loaded_steps
+        else:
+            csv_steps = self._read_last_batch_from_csv()
+            if csv_steps is not None:
+                self.training_steps = csv_steps
         
         # Note: We don't load params from file, we use the current UI params
         # This ensures the slider values control the architecture
