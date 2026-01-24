@@ -42,3 +42,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: Ominis-windows.zip
+
+      - name: Update Latest Release
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Release
+          make_latest: true
+          overwrite_files: true
+          target_commitish: ${{ github.sha }}
+          files: Ominis-windows.zip
