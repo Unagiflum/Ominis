@@ -208,9 +208,11 @@ class Game:
         self.reward_popups = []
         self.reward_popup_duration_ms = 1000
         self.reward_popup_float_px = 24
+        self.reward_popup_y_offset = 18
         self.reward_positive_color = (60, 255, 120)
         self.reward_negative_color = (255, 80, 80)
         self.reward_neutral_color = (220, 220, 220)
+        self.reward_prediction_color = (245, 245, 245)
         
         # Short games tracking
         self.short_games_move_count = 0
@@ -2152,18 +2154,27 @@ class Game:
             return
         if self.ai_estimated_q_piece is not self.current_piece:
             return
-        anchor = self._get_piece_anchor(self.current_piece)
+        ghost = self.get_ghost_piece()
+        if not ghost:
+            return
+        anchor = self._get_piece_anchor(ghost)
         if anchor is None:
             return
         text = self._format_reward_text(self.ai_estimated_q_value)
-        color = self._reward_color(self.ai_estimated_q_value)
-        surface = self.ui.font.render(text, True, color)
+        color = self.reward_prediction_color
+        surface = self.ui.score_font.render(text, True, color)
         x = offset_x + anchor[0] * self.cell_size
-        y = offset_y + anchor[1] * self.cell_size - 8
+        y = offset_y + anchor[1] * self.cell_size - self.reward_popup_y_offset
         min_y = offset_y + 4
         if y < min_y:
             y = min_y
         rect = surface.get_rect(center=(int(x), int(y)))
+        outline = self.ui.score_font.render(text, True, (0, 0, 0))
+        ox, oy = rect.x, rect.y
+        self.screen.blit(outline, (ox - 1, oy))
+        self.screen.blit(outline, (ox + 1, oy))
+        self.screen.blit(outline, (ox, oy - 1))
+        self.screen.blit(outline, (ox, oy + 1))
         self.screen.blit(surface, rect)
 
     def _draw_reward_popups(self, offset_x, offset_y):
@@ -2179,7 +2190,7 @@ class Game:
             alpha = max(0, min(255, int(255 * (1 - t))))
             drift = int(self.reward_popup_float_px * t)
             x = offset_x + popup["grid_x"] * self.cell_size
-            y = offset_y + popup["grid_y"] * self.cell_size - 12 - drift
+            y = offset_y + popup["grid_y"] * self.cell_size - self.reward_popup_y_offset - drift
             min_y = offset_y + 4
             if y < min_y:
                 y = min_y
@@ -2768,6 +2779,9 @@ class Game:
                  offset_y = padding + 5
                  
                  if self.current_piece:
+                     ghost = self.get_ghost_piece()
+                     if ghost and ghost.y != self.current_piece.y:
+                         self.ui.draw_ghost_pentomino(ghost, offset_x, offset_y, self.cell_size)
                      self.ui.draw_pentomino(self.current_piece, offset_x, offset_y, self.cell_size)
                  self._draw_reward_popups(offset_x, offset_y)
                  self._draw_ai_estimated_q(offset_x, offset_y)
