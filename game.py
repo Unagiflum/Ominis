@@ -200,6 +200,17 @@ class Game:
         
         # Pending reward application for visual-mode line clear animation
         self.pending_reward_event = None
+
+        # AI reward display (estimated Q + actual reward popups)
+        self.ai_estimated_q_value = None
+        self.ai_estimated_q_piece = None
+        self.pending_reward_popup = None
+        self.reward_popups = []
+        self.reward_popup_duration_ms = 1000
+        self.reward_popup_float_px = 24
+        self.reward_positive_color = (60, 255, 120)
+        self.reward_negative_color = (255, 80, 80)
+        self.reward_neutral_color = (220, 220, 220)
         
         # Short games tracking
         self.short_games_move_count = 0
@@ -1357,6 +1368,10 @@ class Game:
         self.current_trajectory = []
         self.piece_history = deque()
         self.pending_reward_event = None
+        self.pending_reward_popup = None
+        self.reward_popups = []
+        self.ai_estimated_q_value = None
+        self.ai_estimated_q_piece = None
         self.short_games_move_count = 0
         
         # Save original state before it might be changed
@@ -2077,6 +2092,113 @@ class Game:
         if flush_all:
             self._flush_piece_history()
 
+    def _format_reward_text(self, value, decimals=2):
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            value = 0.0
+        if abs(value) < 0.005:
+            value = 0.0
+        return f"{value:+.{decimals}f}"
+
+    def _reward_color(self, value):
+        if value > 0:
+            return self.reward_positive_color
+        if value < 0:
+            return self.reward_negative_color
+        return self.reward_neutral_color
+
+    def _get_piece_anchor(self, piece):
+        if not piece or not getattr(piece, "shape", None):
+            return None
+        min_x = min(piece.x + x for x, y in piece.shape)
+        max_x = max(piece.x + x for x, y in piece.shape)
+        min_y = min(piece.y + y for x, y in piece.shape)
+        center_x = (min_x + max_x + 1) / 2.0
+        return (center_x, min_y)
+
+    def _queue_reward_popup(self, value, anchor, big=True):
+        if anchor is None:
+            return
+        now = pygame.time.get_ticks()
+        entry = {
+            "text": self._format_reward_text(value),
+            "value": float(value),
+            "grid_x": anchor[0],
+            "grid_y": anchor[1],
+            "start_ms": now,
+            "duration_ms": self.reward_popup_duration_ms,
+            "big": big,
+            "color": self._reward_color(value)
+        }
+        self.reward_popups.append(entry)
+
+    def _queue_pending_reward_popup(self, value, anchor):
+        if anchor is None:
+            return
+        self.pending_reward_popup = {
+            "value": float(value),
+            "anchor": anchor
+        }
+
+    def _flush_pending_reward_popup(self):
+        if not self.pending_reward_popup:
+            return
+        self._queue_reward_popup(self.pending_reward_popup["value"], self.pending_reward_popup["anchor"], big=True)
+        self.pending_reward_popup = None
+
+    def _draw_ai_estimated_q(self, offset_x, offset_y):
+        if self.ai_estimated_q_value is None or not self.current_piece:
+            return
+        if self.ai_estimated_q_piece is not self.current_piece:
+            return
+        anchor = self._get_piece_anchor(self.current_piece)
+        if anchor is None:
+            return
+        text = self._format_reward_text(self.ai_estimated_q_value)
+        color = self._reward_color(self.ai_estimated_q_value)
+        surface = self.ui.font.render(text, True, color)
+        x = offset_x + anchor[0] * self.cell_size
+        y = offset_y + anchor[1] * self.cell_size - 8
+        min_y = offset_y + 4
+        if y < min_y:
+            y = min_y
+        rect = surface.get_rect(center=(int(x), int(y)))
+        self.screen.blit(surface, rect)
+
+    def _draw_reward_popups(self, offset_x, offset_y):
+        if not self.reward_popups:
+            return
+        now = pygame.time.get_ticks()
+        active = []
+        for popup in self.reward_popups:
+            age = now - popup["start_ms"]
+            if age >= popup["duration_ms"]:
+                continue
+            t = age / popup["duration_ms"]
+            alpha = max(0, min(255, int(255 * (1 - t))))
+            drift = int(self.reward_popup_float_px * t)
+            x = offset_x + popup["grid_x"] * self.cell_size
+            y = offset_y + popup["grid_y"] * self.cell_size - 12 - drift
+            min_y = offset_y + 4
+            if y < min_y:
+                y = min_y
+            font = self.ui.score_font if popup["big"] else self.ui.small_font
+            surface = font.render(popup["text"], True, popup["color"])
+            surface.set_alpha(alpha)
+            rect = surface.get_rect(center=(int(x), int(y)))
+            if popup["big"]:
+                outline = font.render(popup["text"], True, (0, 0, 0))
+                outline.set_alpha(alpha)
+                ox, oy = rect.x, rect.y
+                self.screen.blit(outline, (ox - 1, oy))
+                self.screen.blit(outline, (ox + 1, oy))
+                self.screen.blit(outline, (ox, oy - 1))
+                self.screen.blit(outline, (ox, oy + 1))
+            self.screen.blit(surface, rect)
+            active.append(popup)
+        self.reward_popups = active
+
     def finish_training_round(self):
         """Handle end-of-game bookkeeping and restart training."""
         self.state = "TRAINING" # Restore state BEFORE reset so it knows to use training params
@@ -2175,7 +2297,14 @@ class Game:
         
         # 2. Select Action (returns joint action index 0-8)
         action_mask = self.agent.get_action_mask(self)
-        selected_action = self.agent.select_action(state, action_mask=action_mask)
+        if self.train_params.get('visual_mode', False):
+            selected_action, q_value = self.agent.select_action(state, action_mask=action_mask, return_q_value=True)
+            self.ai_estimated_q_value = q_value
+            self.ai_estimated_q_piece = self.current_piece
+        else:
+            selected_action = self.agent.select_action(state, action_mask=action_mask)
+            self.ai_estimated_q_value = None
+            self.ai_estimated_q_piece = None
         # Count every inference step, even if it is later discarded from memory
         self.agent.record_inference_step()
         lat_idx, rot_idx = self.agent.decode_action(selected_action)
@@ -2269,6 +2398,13 @@ class Game:
                 height_std_delta
             )
 
+            if self.train_params.get('visual_mode', False):
+                anchor = self._get_piece_anchor(piece_before)
+                if self.state == "ANIMATING_CLEAR":
+                    self._queue_pending_reward_popup(reward, anchor)
+                else:
+                    self._queue_reward_popup(reward, anchor, big=True)
+
             # Apply reward to this piece's trajectory
             if self.state == "ANIMATING_CLEAR":
                 # Store trajectory with reward for after animation completes
@@ -2318,13 +2454,18 @@ class Game:
 
         # 1. Get Current State
         state = self.agent.get_state(self)
+        piece_before = self.current_piece
+        lines_before = self.lines_cleared_total
+        max_height_before, holes_before_step, jaggedness_before, valleys_before, height_std_before = self.get_grid_stats()
         
         # 2. Select Action (No epsilon exploration usually, but agent handles it)
         # We might want to force epsilon=0 for watching?
         old_eps = self.agent.epsilon
         self.agent.epsilon = 0 # Force greedy
         action_mask = self.agent.get_action_mask(self)
-        action = self.agent.select_action(state, action_mask=action_mask)
+        action, q_value = self.agent.select_action(state, action_mask=action_mask, return_q_value=True)
+        self.ai_estimated_q_value = q_value
+        self.ai_estimated_q_piece = self.current_piece
         self.agent.epsilon = old_eps
         
         lat_idx, rot_idx = self.agent.decode_action(action)
@@ -2337,8 +2478,50 @@ class Game:
         if rot_idx == 0: moves.append("ROTATE_CCW")
         elif rot_idx == 2: moves.append("ROTATE_CW")
         
+        # Reset clearing lines flag for reward detection
+        self.clearing_lines = []
+
         # 3. Execute Moves
         self.step_ai(moves)
+
+        lines_after = self.lines_cleared_total
+        lines_cleared = lines_after - lines_before
+        done = (self.state == "GAMEOVER")
+
+        if self.state == "ANIMATING_CLEAR":
+            lines_cleared = len(self.clearing_lines)
+            piece_locked = True
+        else:
+            piece_locked = (lines_cleared > 0) or done or (self.current_piece is not piece_before)
+
+        if piece_locked:
+            clearing_lines = self.clearing_lines[:] if self.clearing_lines else []
+            if not clearing_lines:
+                for y, row in enumerate(self.grid.grid):
+                    if (0, 0, 0) not in row:
+                        clearing_lines.append(y)
+
+            max_height_after, holes_after, jaggedness_after, valleys_after, height_std_after = self.get_post_clear_grid_stats(clearing_lines)
+            hole_delta = holes_after - holes_before_step
+            jaggedness_delta = jaggedness_after - jaggedness_before
+            valley_delta = valleys_after - valleys_before
+            max_height_delta = max_height_after - max_height_before
+            height_std_delta = height_std_after - height_std_before
+
+            reward = self.agent.calculate_reward(
+                lines_cleared,
+                hole_delta,
+                jaggedness_delta,
+                valley_delta,
+                max_height_delta,
+                height_std_delta
+            )
+
+            anchor = self._get_piece_anchor(piece_before)
+            if self.state == "ANIMATING_CLEAR":
+                self._queue_pending_reward_popup(reward, anchor)
+            else:
+                self._queue_reward_popup(reward, anchor, big=True)
 
     def update(self):
         current_time = pygame.time.get_ticks()
@@ -2426,6 +2609,7 @@ class Game:
             clear_ms = getattr(self, "anim_clear_ms", 200)
             if current_time - self.animation_timer > clear_ms:
                 self.apply_line_clears()
+                self._flush_pending_reward_popup()
                 self.state = "ANIMATING_DROP"
                 self.animation_timer = current_time
                 self.drop_anim_last_time = current_time
@@ -2585,6 +2769,8 @@ class Game:
                  
                  if self.current_piece:
                      self.ui.draw_pentomino(self.current_piece, offset_x, offset_y, self.cell_size)
+                 self._draw_reward_popups(offset_x, offset_y)
+                 self._draw_ai_estimated_q(offset_x, offset_y)
 
             if train_dropdown_layout:
                 (drop_x, drop_y, drop_w, drop_h, options, list_options, option_width, selected_idx, visible_count, scroll_offset) = train_dropdown_layout
@@ -2837,6 +3023,16 @@ class Game:
                     self.ui.draw_ghost_pentomino(ghost, offset_x, offset_y, self.cell_size)
                 
                 self.ui.draw_pentomino(self.current_piece, offset_x, offset_y, self.cell_size)
+
+            show_ai_overlays = (
+                self.state == "WATCH_AI"
+                or (self.state in ["ANIMATING_CLEAR", "ANIMATING_DROP"] and getattr(self, "pre_anim_state", None) == "WATCH_AI")
+                or (self.state == "PAUSED" and getattr(self, "last_state", None) == "WATCH_AI")
+                or (self.state == "GAMEOVER" and getattr(self, "last_state", None) == "WATCH_AI")
+            )
+            if show_ai_overlays:
+                self._draw_reward_popups(offset_x, offset_y)
+                self._draw_ai_estimated_q(offset_x, offset_y)
             self.btn_back_rect = None
             self.btn_quit_rect = None
             

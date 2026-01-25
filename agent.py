@@ -404,12 +404,13 @@ class MonteCarloAgent:
         mask[stay_action] = True
         return mask
 
-    def select_action(self, state, action_mask=None):
+    def select_action(self, state, action_mask=None, return_q_value=False):
         """Select action using epsilon-greedy with joint action space.
         
         Returns:
             action_idx: Integer 0-8 representing joint action
                        (lateral_idx * 3 + rotation_idx)
+            If return_q_value is True, returns (action_idx, q_value) for the chosen action.
         """
         grid_input, next_piece_input = state
 
@@ -421,26 +422,44 @@ class MonteCarloAgent:
                 valid_action_indices = np.array([self.encode_action(1, 1)], dtype=np.int64)
         
         self.model.eval()
-        if random.random() <= self.epsilon:
+        explore = (random.random() <= self.epsilon)
+
+        q_values = None
+        if return_q_value or not explore:
+            # Predict Q-values for all 9 joint actions
+            grid_tensor = torch.FloatTensor(grid_input).unsqueeze(0).to(self.device)
+            next_tensor = torch.FloatTensor(next_piece_input).unsqueeze(0).to(self.device)
+            
+            with torch.no_grad():
+                q_values = self.model(grid_tensor, next_tensor)
+
+            if action_mask is not None:
+                mask_tensor = torch.tensor(action_mask, dtype=torch.bool, device=q_values.device).unsqueeze(0)
+                q_values = q_values.masked_fill(~mask_tensor, -1.0e9)
+        
+        if explore:
             if valid_action_indices is None:
                 # Random joint action (unmasked)
-                return random.randint(0, self.num_actions - 1)
-            # Random joint action (masked)
-            return int(random.choice(valid_action_indices))
-        
-        # Predict Q-values for all 9 joint actions
-        grid_tensor = torch.FloatTensor(grid_input).unsqueeze(0).to(self.device)
-        next_tensor = torch.FloatTensor(next_piece_input).unsqueeze(0).to(self.device)
-        
-        with torch.no_grad():
-            q_values = self.model(grid_tensor, next_tensor)
+                action_idx = random.randint(0, self.num_actions - 1)
+            else:
+                # Random joint action (masked)
+                action_idx = int(random.choice(valid_action_indices))
+        else:
+            # Greedy action selection (argmax) - pick highest Q-value
+            action_idx = q_values.argmax(dim=-1).item()
 
-        if action_mask is not None:
-            mask_tensor = torch.tensor(action_mask, dtype=torch.bool, device=q_values.device).unsqueeze(0)
-            q_values = q_values.masked_fill(~mask_tensor, -1.0e9)
-            
-        # Greedy action selection (argmax) - pick highest Q-value
-        action_idx = q_values.argmax(dim=-1).item()
+        if return_q_value:
+            if q_values is None:
+                # Fallback: compute Q-values if we somehow skipped it
+                grid_tensor = torch.FloatTensor(grid_input).unsqueeze(0).to(self.device)
+                next_tensor = torch.FloatTensor(next_piece_input).unsqueeze(0).to(self.device)
+                with torch.no_grad():
+                    q_values = self.model(grid_tensor, next_tensor)
+                if action_mask is not None:
+                    mask_tensor = torch.tensor(action_mask, dtype=torch.bool, device=q_values.device).unsqueeze(0)
+                    q_values = q_values.masked_fill(~mask_tensor, -1.0e9)
+            q_value = q_values[0, action_idx].item()
+            return action_idx, q_value
         
         return action_idx
     
@@ -602,9 +621,8 @@ class MonteCarloAgent:
         
         if pieces > 0:
             lines_per_piece = lines / pieces
-            lpp_str = f"{lines_per_piece:.4f}"
         else:
-            lpp_str = "N/A"
+            lines_per_piece = 0.0
             
         # Running average: Sum of lines / Sum of pieces
         total_pieces_hist = sum(h[1] for h in self.history)
@@ -612,29 +630,56 @@ class MonteCarloAgent:
         
         if total_pieces_hist > 0:
             avg_lpp = total_lines_hist / total_pieces_hist
-            lpp_str += f" ({avg_lpp:.4f})"
         else:
-            lpp_str += " (N/A)"
+            avg_lpp = 0.0
+
+        lpp_str = f"{lines_per_piece:.4f} ({avg_lpp:.4f})"
+
+        def format_lpg_value(value):
+            if value is None:
+                return f"{'N/A':>5}"
+            try:
+                val = float(value)
+            except (TypeError, ValueError):
+                return f"{'N/A':>5}"
+            if val < 0:
+                val = 0.0
+            if val < 10:
+                decimals = 3
+            elif val < 100:
+                decimals = 2
+            elif val < 1000:
+                decimals = 1
+            else:
+                decimals = 0
+            for dec in range(decimals, -1, -1):
+                text = f"{val:.{dec}f}"
+                if len(text) <= 5:
+                    return f"{text:>5}"
+            text = f"{val:.0f}"
+            if len(text) <= 5:
+                return f"{text:>5}"
+            return text[-5:]
 
         if gameovers > 0:
             lines_per_game = lines / gameovers
-            lines_per_game_str = f"{lines_per_game:.3f}"
         else:
-            lines_per_game_str = "N/A"
+            lines_per_game = None
             
         # Running average: Sum of lines / Sum of gameovers
         total_gameovers_hist = sum(h[3] for h in self.history)
             
         if total_gameovers_hist > 0:
             avg_lpg = total_lines_hist / total_gameovers_hist
-            lines_per_game_str += f" ({avg_lpg:.3f})"
         else:
-            lines_per_game_str += " (N/A)"
+            avg_lpg = None
+
+        lines_per_game_str = f"{format_lpg_value(lines_per_game)} ({format_lpg_value(avg_lpg)})"
 
         epsilon_str = f"{self.epsilon:.5f}"
         lr_str = f"{self.learning_rate:.6f}"
         print(
-            f"{inference_moves} mvs, {pieces} pcs, {lines} lines, {gameovers} Games | "
+            f"Batch {self.training_steps:>7d}, {pieces} pc, {lines:>3d} line, {gameovers:>2d} GO | "
             f"LPP = {lpp_str} | LPG = {lines_per_game_str} | Epsilon = {epsilon_str} | LR = {lr_str}"
         )
 
@@ -830,7 +875,8 @@ class MonteCarloAgent:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'epsilon': self.epsilon,
             'params': self.params,
-            'training_steps': self.training_steps
+            'training_steps': self.training_steps,
+            'history': list(self.history)
         }, path)
 
     def load(self, path):
@@ -859,6 +905,12 @@ class MonteCarloAgent:
             for param_group in self.optimizer.param_groups:
                 param_group['lr'] = self.learning_rate
         self._sync_learning_rate_params()
+        history = checkpoint.get('history')
+        if history:
+            try:
+                self.history = deque(history, maxlen=100)
+            except Exception:
+                pass
         loaded_epsilon = checkpoint.get('epsilon')
         if loaded_epsilon is None:
             loaded_epsilon = self.epsilon
