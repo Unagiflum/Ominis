@@ -105,6 +105,7 @@ class MonteCarloAgent:
 
         # Logging initialization
         self.training_steps = 0
+        self.on_progress_logged = None
         self._init_logging()
 
     def _init_logging(self):
@@ -618,6 +619,11 @@ class MonteCarloAgent:
         # Log to CSV every 250 batches
         if self.training_steps > 0 and self.training_steps % 250 == 0:
             self._log_progress_to_csv()
+            if callable(self.on_progress_logged):
+                try:
+                    self.on_progress_logged()
+                except Exception as e:
+                    print(f"Error in progress log callback: {e}")
         
         if pieces > 0:
             lines_per_piece = lines / pieces

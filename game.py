@@ -196,7 +196,6 @@ class Game:
         self.current_trajectory = [] # Buffer for current piece's moves
         self.piece_history = deque() # Pending piece trajectories for delayed rewards
         self.start_stats = (0, 0, 0, 0, 0.0) # (Height, Holes, Jaggedness, Valleys, HeightStd) at start of piece
-        self.last_save_time = 0 # Track last auto-save time
         
         # Pending reward application for visual-mode line clear animation
         self.pending_reward_event = None
@@ -752,6 +751,7 @@ class Game:
         if agent:
             self.train_dropdown_open = False
             self.agent = agent
+            self.agent.on_progress_logged = self._handle_training_progress_log
             self.reset()
             import os
             current_arch = self._current_train_arch()
@@ -822,12 +822,20 @@ class Game:
             self.state = "TRAINING"
             if not self.train_params['visual_mode']:
                 self.audio.stop() # No music in headless
-
-            # Initialize auto-save timer
-            self.last_save_time = pygame.time.get_ticks()
         else:
             self.agent = None
             print("Training requires the AI dependencies; staying in the Train menu.")
+
+    def _handle_training_progress_log(self):
+        if not self.agent:
+            return
+        model_path = self.get_model_filename()
+        try:
+            self.agent.save(model_path)
+            print(f"Auto-saved model ({model_path}).")
+            self.save_settings()
+        except Exception as e:
+            print(f"Failed to auto-save model {model_path}: {e}")
 
     def _handle_train_preflight_choice(self, choice):
         if choice == "cancel":
@@ -2449,15 +2457,6 @@ class Game:
             if done and self.state != "ANIMATING_CLEAR":
                 self.finish_training_round()
         
-        # Auto-save every 5 minutes
-        current_time = pygame.time.get_ticks()
-        if current_time - self.last_save_time > 5 * 60 * 1000:
-            if self.agent:
-                self.agent.save(self.get_model_filename())
-                print(f"Auto-saved model ({self.get_model_filename()}) at {current_time // 1000}s")
-                self.save_settings()
-                self.last_save_time = current_time
-
     def step_ai_watch(self):
         """Executes AI moves for watching mode (no training)."""
         if not self.agent or not self.current_piece:
