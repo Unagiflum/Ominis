@@ -212,6 +212,8 @@ class Game:
         self.reward_negative_color = (255, 80, 80)
         self.reward_neutral_color = (220, 220, 220)
         self.reward_prediction_color = (245, 245, 245)
+        self.reward_header_alpha = 0.67
+        self.reward_header_blink_ms = 400
         
         # Short games tracking
         self.short_games_move_count = 0
@@ -2158,43 +2160,60 @@ class Game:
         self.pending_reward_popup = None
 
     def _draw_ai_estimated_q(self, offset_x, offset_y):
-        if self.ai_estimated_q_value is None or not self.current_piece:
-            return
-        if self.ai_estimated_q_piece is not self.current_piece:
-            return
         font = self.ui.score_font
         start_x = offset_x + 8
         start_y = offset_y + 12
         line_gap = 2
 
-        def blit_outline(text, surface, x, y):
+        def blit_outline(text, surface, x, y, alpha_value):
             outline = font.render(text, True, (0, 0, 0))
-            self.screen.blit(outline, (x - 1, y))
-            self.screen.blit(outline, (x + 1, y))
-            self.screen.blit(outline, (x, y - 1))
-            self.screen.blit(outline, (x, y + 1))
+            if alpha_value is not None:
+                outline.set_alpha(alpha_value)
+                surface.set_alpha(alpha_value)
+            for offset in (1, 2):
+                self.screen.blit(outline, (x - offset, y))
+                self.screen.blit(outline, (x + offset, y))
+                self.screen.blit(outline, (x, y - offset))
+                self.screen.blit(outline, (x, y + offset))
             self.screen.blit(surface, (x, y))
 
         y = start_y
+        alpha_value = int(255 * self.reward_header_alpha)
 
         batches = getattr(self.agent, "training_steps", None) if self.agent else None
         if isinstance(batches, (int, float)) and batches > 0:
             batch_text = f"Batches: {int(batches)}"
             batch_surface = font.render(batch_text, True, self.reward_prediction_color)
-            blit_outline(batch_text, batch_surface, int(start_x), int(y))
+            blit_outline(batch_text, batch_surface, int(start_x), int(y), alpha_value)
             y += batch_surface.get_height() + line_gap
 
         label_text = "Est. Q-Value: "
-        value_text = self._format_reward_text(self.ai_estimated_q_value)
         label_surface = font.render(label_text, True, self.reward_prediction_color)
-        value_color = self._reward_color(self.ai_estimated_q_value)
-        if abs(float(self.ai_estimated_q_value)) < 0.005:
-            value_color = self.reward_prediction_color
-        value_surface = font.render(value_text, True, value_color)
+        blit_outline(label_text, label_surface, int(start_x), int(y), alpha_value)
 
-        blit_outline(label_text, label_surface, int(start_x), int(y))
-        value_x = start_x + label_surface.get_width()
-        blit_outline(value_text, value_surface, int(value_x), int(y))
+        show_value = self.ai_estimated_q_value is not None
+        if show_value:
+            between_pieces = False
+            if self.state in ("ANIMATING_CLEAR", "ANIMATING_DROP"):
+                between_pieces = True
+            elif not self.current_piece:
+                between_pieces = True
+            elif self.ai_estimated_q_piece is not None and self.ai_estimated_q_piece is not self.current_piece:
+                between_pieces = True
+
+            if between_pieces:
+                blink_ms = max(120, int(self.reward_header_blink_ms))
+                blink_on = (pygame.time.get_ticks() // blink_ms) % 2 == 0
+                show_value = blink_on
+
+        if show_value:
+            value_text = self._format_reward_text(self.ai_estimated_q_value)
+            value_color = self._reward_color(self.ai_estimated_q_value)
+            if abs(float(self.ai_estimated_q_value)) < 0.005:
+                value_color = self.reward_prediction_color
+            value_surface = font.render(value_text, True, value_color)
+            value_x = start_x + label_surface.get_width()
+            blit_outline(value_text, value_surface, int(value_x), int(y), alpha_value)
 
     def _draw_reward_popups(self, offset_x, offset_y):
         if not self.reward_popups:
@@ -2221,10 +2240,11 @@ class Game:
                 outline = font.render(popup["text"], True, (0, 0, 0))
                 outline.set_alpha(alpha)
                 ox, oy = rect.x, rect.y
-                self.screen.blit(outline, (ox - 1, oy))
-                self.screen.blit(outline, (ox + 1, oy))
-                self.screen.blit(outline, (ox, oy - 1))
-                self.screen.blit(outline, (ox, oy + 1))
+                for offset in (1, 2):
+                    self.screen.blit(outline, (ox - offset, oy))
+                    self.screen.blit(outline, (ox + offset, oy))
+                    self.screen.blit(outline, (ox, oy - offset))
+                    self.screen.blit(outline, (ox, oy + offset))
             self.screen.blit(surface, rect)
             active.append(popup)
         self.reward_popups = active
