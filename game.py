@@ -2162,21 +2162,12 @@ class Game:
             return
         if self.ai_estimated_q_piece is not self.current_piece:
             return
-        ghost = self.get_ghost_piece()
-        if not ghost:
-            return
-        anchor = self._get_piece_anchor(ghost)
-        if anchor is None:
-            return
-        text = self._format_reward_text(self.ai_estimated_q_value)
-        color = self.reward_prediction_color
+        text = f"Est. Q-Value: {self._format_reward_text(self.ai_estimated_q_value)}"
+        color = self._reward_color(self.ai_estimated_q_value)
         surface = self.ui.score_font.render(text, True, color)
-        x = offset_x + anchor[0] * self.cell_size
-        y = offset_y + anchor[1] * self.cell_size - self.reward_popup_y_offset
-        min_y = offset_y + 4
-        if y < min_y:
-            y = min_y
-        rect = surface.get_rect(center=(int(x), int(y)))
+        x = offset_x + 8
+        y = offset_y + 12
+        rect = surface.get_rect(topleft=(int(x), int(y)))
         outline = self.ui.score_font.render(text, True, (0, 0, 0))
         ox, oy = rect.x, rect.y
         self.screen.blit(outline, (ox - 1, oy))
