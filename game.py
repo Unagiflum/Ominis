@@ -2162,19 +2162,39 @@ class Game:
             return
         if self.ai_estimated_q_piece is not self.current_piece:
             return
-        text = f"Est. Q-Value: {self._format_reward_text(self.ai_estimated_q_value)}"
-        color = self._reward_color(self.ai_estimated_q_value)
-        surface = self.ui.score_font.render(text, True, color)
-        x = offset_x + 8
-        y = offset_y + 12
-        rect = surface.get_rect(topleft=(int(x), int(y)))
-        outline = self.ui.score_font.render(text, True, (0, 0, 0))
-        ox, oy = rect.x, rect.y
-        self.screen.blit(outline, (ox - 1, oy))
-        self.screen.blit(outline, (ox + 1, oy))
-        self.screen.blit(outline, (ox, oy - 1))
-        self.screen.blit(outline, (ox, oy + 1))
-        self.screen.blit(surface, rect)
+        font = self.ui.score_font
+        start_x = offset_x + 8
+        start_y = offset_y + 12
+        line_gap = 2
+
+        def blit_outline(text, surface, x, y):
+            outline = font.render(text, True, (0, 0, 0))
+            self.screen.blit(outline, (x - 1, y))
+            self.screen.blit(outline, (x + 1, y))
+            self.screen.blit(outline, (x, y - 1))
+            self.screen.blit(outline, (x, y + 1))
+            self.screen.blit(surface, (x, y))
+
+        y = start_y
+
+        batches = getattr(self.agent, "training_steps", None) if self.agent else None
+        if isinstance(batches, (int, float)) and batches > 0:
+            batch_text = f"Batches: {int(batches)}"
+            batch_surface = font.render(batch_text, True, self.reward_prediction_color)
+            blit_outline(batch_text, batch_surface, int(start_x), int(y))
+            y += batch_surface.get_height() + line_gap
+
+        label_text = "Est. Q-Value: "
+        value_text = self._format_reward_text(self.ai_estimated_q_value)
+        label_surface = font.render(label_text, True, self.reward_prediction_color)
+        value_color = self._reward_color(self.ai_estimated_q_value)
+        if abs(float(self.ai_estimated_q_value)) < 0.005:
+            value_color = self.reward_prediction_color
+        value_surface = font.render(value_text, True, value_color)
+
+        blit_outline(label_text, label_surface, int(start_x), int(y))
+        value_x = start_x + label_surface.get_width()
+        blit_outline(value_text, value_surface, int(value_x), int(y))
 
     def _draw_reward_popups(self, offset_x, offset_y):
         if not self.reward_popups:
