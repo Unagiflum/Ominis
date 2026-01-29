@@ -2903,9 +2903,9 @@ class Game:
                     "How would you like to proceed?"
                 ]
                 choices = [
-                    ("load", "Use saved settings"),
-                    ("update", "Update settings (keep weights)"),
-                    ("fresh", "Overwrite saved weights and Settings"),
+                    ("load", "Use saved settings and weights"),
+                    ("update", "Update settings, keep weights"),
+                    ("fresh", "Overwrite saved weights and settings"),
                     ("cancel", "Cancel")
                 ]
                 self.train_preflight_rects = self.ui.draw_choice_dialog(
