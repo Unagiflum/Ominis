@@ -855,7 +855,21 @@ class Game:
             if os.path.exists(model_path):
                 self.select_train_model(model_name, explicit=True)
             self._start_training_from_menu()
-        elif choice == "overwrite":
+        elif choice == "update":
+            self._start_training_from_menu(overwrite_existing=True)
+        elif choice == "fresh":
+            base_name = os.path.splitext(os.path.basename(model_path))[0]
+            csv_path = os.path.join("progress", f"{base_name}.csv")
+            if os.path.exists(model_path):
+                try:
+                    os.remove(model_path)
+                except Exception as e:
+                    print(f"Failed to delete model file {model_path}: {e}")
+            if os.path.exists(csv_path):
+                try:
+                    os.remove(csv_path)
+                except Exception as e:
+                    print(f"Failed to delete progress file {csv_path}: {e}")
             self._start_training_from_menu(overwrite_existing=True)
 
     def _is_standard_model_name(self, model_file):
@@ -1602,13 +1616,17 @@ class Game:
                     if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                         mouse_pos = event.pos
                         load_rect = self.train_preflight_rects.get("load") if self.train_preflight_rects else None
-                        overwrite_rect = self.train_preflight_rects.get("overwrite") if self.train_preflight_rects else None
+                        update_rect = self.train_preflight_rects.get("update") if self.train_preflight_rects else None
+                        fresh_rect = self.train_preflight_rects.get("fresh") if self.train_preflight_rects else None
                         cancel_rect = self.train_preflight_rects.get("cancel") if self.train_preflight_rects else None
                         if load_rect and load_rect.collidepoint(mouse_pos):
                             self._handle_train_preflight_choice("load")
                             continue
-                        if overwrite_rect and overwrite_rect.collidepoint(mouse_pos):
-                            self._handle_train_preflight_choice("overwrite")
+                        if update_rect and update_rect.collidepoint(mouse_pos):
+                            self._handle_train_preflight_choice("update")
+                            continue
+                        if fresh_rect and fresh_rect.collidepoint(mouse_pos):
+                            self._handle_train_preflight_choice("fresh")
                             continue
                         if cancel_rect and cancel_rect.collidepoint(mouse_pos):
                             self._handle_train_preflight_choice("cancel")
@@ -2881,12 +2899,13 @@ class Game:
 
             if self.train_preflight_active:
                 message_lines = [
-                    "A default model of this size with different settings already exists.",
+                    "Model of this size exists with different settings.",
                     "How would you like to proceed?"
                 ]
                 choices = [
                     ("load", "Use saved settings"),
-                    ("overwrite", "Update settings (keep weights)"),
+                    ("update", "Update settings (keep weights)"),
+                    ("fresh", "Overwrite saved weights and Settings"),
                     ("cancel", "Cancel")
                 ]
                 self.train_preflight_rects = self.ui.draw_choice_dialog(
@@ -2894,7 +2913,8 @@ class Game:
                     self.screen_height,
                     message_lines,
                     choices,
-                    mouse_pos
+                    mouse_pos,
+                    layout="column"
                 )
             else:
                 self.train_preflight_rects = {}

@@ -659,7 +659,7 @@ class UI:
         resume_rect = resume_text.get_rect(center=(x + width // 2, y + height // 2 + 60))
         self.screen.blit(resume_text, resume_rect)
 
-    def draw_choice_dialog(self, screen_width, screen_height, message_lines, choices, mouse_pos=None):
+    def draw_choice_dialog(self, screen_width, screen_height, message_lines, choices, mouse_pos=None, layout="row"):
         overlay = pygame.Surface((screen_width, screen_height))
         overlay.set_alpha(180)
         overlay.fill((0, 0, 0))
@@ -683,17 +683,26 @@ class UI:
 
         button_height = 32
         button_gap = 10
+        label_widths = [button_font.size(label)[0] for _, label in choices]
+        widest_label = max(label_widths) if label_widths else 0
+        uniform_width = max(120, widest_label + 20)
         button_widths = []
-        for _, label in choices:
-            label_width = button_font.size(label)[0]
-            button_widths.append(max(120, label_width + 20))
+        for width in label_widths:
+            button_widths.append(max(120, width + 20))
 
         total_buttons_width = sum(button_widths)
         if button_widths:
             total_buttons_width += button_gap * (len(button_widths) - 1)
+        total_buttons_height = button_height * len(button_widths)
+        if button_widths:
+            total_buttons_height += button_gap * (len(button_widths) - 1)
 
-        panel_width = max(360, max_line_width + padding * 2, total_buttons_width + padding * 2)
-        panel_height = padding * 2 + total_text_height + 20 + button_height
+        if layout == "column":
+            panel_width = max(360, max_line_width + padding * 2, uniform_width + padding * 2)
+            panel_height = padding * 2 + total_text_height + 20 + total_buttons_height
+        else:
+            panel_width = max(360, max_line_width + padding * 2, total_buttons_width + padding * 2)
+            panel_height = padding * 2 + total_text_height + 20 + button_height
 
         panel_x = (screen_width - panel_width) // 2
         panel_y = (screen_height - panel_height) // 2
@@ -707,24 +716,40 @@ class UI:
             self.screen.blit(surf, (panel_x + panel_width // 2 - surf.get_width() // 2, current_y))
             current_y += surf.get_height() + line_gap
 
-        button_y = panel_y + panel_height - padding - button_height
-        start_x = panel_x + (panel_width - total_buttons_width) // 2
-
         rects = {}
-        x = start_x
-        for (key, label), btn_width in zip(choices, button_widths):
-            rect = self.draw_button(
-                x,
-                button_y,
-                btn_width,
-                button_height,
-                label,
-                True,
-                mouse_pos,
-                font=button_font
-            )
-            rects[key] = rect
-            x += btn_width + button_gap
+        if layout == "column":
+            button_y = panel_y + panel_height - padding - total_buttons_height
+            x = panel_x + (panel_width - uniform_width) // 2
+            for key, label in choices:
+                rect = self.draw_button(
+                    x,
+                    button_y,
+                    uniform_width,
+                    button_height,
+                    label,
+                    True,
+                    mouse_pos,
+                    font=button_font
+                )
+                rects[key] = rect
+                button_y += button_height + button_gap
+        else:
+            button_y = panel_y + panel_height - padding - button_height
+            start_x = panel_x + (panel_width - total_buttons_width) // 2
+            x = start_x
+            for (key, label), btn_width in zip(choices, button_widths):
+                rect = self.draw_button(
+                    x,
+                    button_y,
+                    btn_width,
+                    button_height,
+                    label,
+                    True,
+                    mouse_pos,
+                    font=button_font
+                )
+                rects[key] = rect
+                x += btn_width + button_gap
 
         return rects
 
