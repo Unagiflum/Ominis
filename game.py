@@ -760,6 +760,10 @@ class Game:
             selected_arch = self.train_model_arch
             selected_path = None
             use_selected = False
+            selected_model_name = self.train_model_source
+            selected_nonstandard = False
+            if selected_model_name:
+                selected_nonstandard = not self._is_standard_model_name(selected_model_name)
             if self.train_model_source:
                 selected_path = os.path.join("models", self.train_model_source)
                 use_selected = selected_arch == current_arch and os.path.exists(selected_path)
@@ -767,29 +771,19 @@ class Game:
             standard_path = self.get_model_filename()
             model_file = selected_path if use_selected else standard_path
 
-            if overwrite_existing:
-                self.train_model_source = os.path.basename(standard_path)
-                self.train_model_selected = self.train_model_source
-                self.train_model_arch = current_arch
-                self.refresh_train_models()
-            elif not use_selected:
+            if overwrite_existing or not use_selected:
                 self.train_model_source = os.path.basename(standard_path)
                 self.train_model_selected = self.train_model_source
                 self.train_model_arch = current_arch
                 self.refresh_train_models()
 
-            if overwrite_existing:
-                try:
-                    self.agent.save(standard_path)
-                    self.refresh_train_models()
-                    print(f"Overwrote model file ({standard_path}).")
-                except Exception as e:
-                    print(f"Failed to overwrite model file {standard_path}: {e}")
-            elif model_file and os.path.exists(model_file):
+            loaded_existing = False
+            if model_file and os.path.exists(model_file):
                 try:
                     self.agent.load(model_file)
+                    loaded_existing = True
                     print(f"Loaded existing model {model_file}.")
-                    if self.train_model_source and not self._is_standard_model_name(self.train_model_source):
+                    if use_selected and selected_nonstandard:
                         standard_path = self.get_model_filename()
                         try:
                             self.agent.save(standard_path)
@@ -818,6 +812,14 @@ class Game:
                 apply_current=self.epsilon_override_pending
             )
             self.epsilon_override_pending = False
+
+            if overwrite_existing and loaded_existing:
+                try:
+                    self.agent.save(standard_path)
+                    self.refresh_train_models()
+                    print(f"Updated model settings ({standard_path}).")
+                except Exception as e:
+                    print(f"Failed to update model settings {standard_path}: {e}")
 
             self.save_settings()
 
@@ -2880,11 +2882,11 @@ class Game:
             if self.train_preflight_active:
                 message_lines = [
                     "A default model of this size with different settings already exists.",
-                    "Do you want to:"
+                    "How would you like to proceed?"
                 ]
                 choices = [
-                    ("load", "Load default model"),
-                    ("overwrite", "Overwrite default model"),
+                    ("load", "Use saved settings"),
+                    ("overwrite", "Update settings (keep weights)"),
                     ("cancel", "Cancel")
                 ]
                 self.train_preflight_rects = self.ui.draw_choice_dialog(
