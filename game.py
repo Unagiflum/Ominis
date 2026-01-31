@@ -726,12 +726,6 @@ class Game:
     def _maybe_open_train_preflight(self):
         if self.train_preflight_active:
             return True
-        current_arch = self._current_train_arch()
-        selected_nonstandard = False
-        if self.train_model_source:
-            selected_nonstandard = not self._is_standard_model_name(self.train_model_source)
-        if self.train_model_loaded_explicit_arch == current_arch and not selected_nonstandard:
-            return False
         model_path = self.get_model_filename()
         import os
         if not os.path.exists(model_path):
