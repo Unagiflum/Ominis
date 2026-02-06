@@ -317,6 +317,7 @@ class UI:
                 {"separator": True},
                 {"label": "Game Over", "left": "reward_game_over", "right": None, "center": True},
                 {"label": "Lines Cleared", "left": "reward_lines_cleared", "right": None, "center": True},
+                {"label": "High line mult.", "left": "reward_high_line_mult", "right": None, "center": True},
                 {"label": "Scale line reward per lines squared", "checkbox": True},
             ]
 

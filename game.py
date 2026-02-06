@@ -19,6 +19,7 @@ class Game:
     REWARD_DEFAULTS = {
         'reward_game_over': -2.0,
         'reward_lines_cleared': 0.075,
+        'reward_high_line_mult': 1.0,
         'reward_lines_squared': False,
         'reward_hole_decrease': 0.500,
         'reward_hole_increase': -0.500,
@@ -33,6 +34,7 @@ class Game:
     REWARD_VALUE_KEYS = (
         'reward_game_over',
         'reward_lines_cleared',
+        'reward_high_line_mult',
         'reward_hole_decrease',
         'reward_hole_increase',
         'reward_jaggedness_decrease',
@@ -435,6 +437,15 @@ class Game:
             value = 0.0
         return value
 
+    def _clamp_high_line_mult(self, value):
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+        value = max(1.0, min(20.0, value))
+        value = round(value, 3)
+        return value
+
     def _clamp_reward_params(self):
         for key, default in self.REWARD_DEFAULTS.items():
             if key == 'reward_lines_squared':
@@ -445,6 +456,13 @@ class Game:
                 else:
                     value = bool(value)
                 self.train_params[key] = value
+                continue
+            if key == 'reward_high_line_mult':
+                value = self.train_params.get(key, default)
+                parsed = self._clamp_high_line_mult(value)
+                if parsed is None:
+                    parsed = default
+                self.train_params[key] = parsed
                 continue
             value = self.train_params.get(key, default)
             parsed = self._clamp_reward_value(value)
@@ -473,7 +491,10 @@ class Game:
         if not self.reward_input_active:
             return
         key = self.reward_input_active
-        parsed = self._clamp_reward_value(self.reward_input_text.strip())
+        if key == 'reward_high_line_mult':
+            parsed = self._clamp_high_line_mult(self.reward_input_text.strip())
+        else:
+            parsed = self._clamp_reward_value(self.reward_input_text.strip())
         if parsed is not None:
             self.train_params[key] = parsed
         self._clear_reward_input()
@@ -2442,6 +2463,7 @@ class Game:
                     if (0, 0, 0) not in row:
                         clearing_lines.append(y)
 
+            stack_height_pre_clear, _, _, _, _ = self.get_grid_stats()
             # Post-clear stats on simulated grid
             max_height_after, holes_after, jaggedness_after, valleys_after, height_std_after = self.get_post_clear_grid_stats(clearing_lines)
             hole_delta = holes_after - holes_before_step
@@ -2459,7 +2481,9 @@ class Game:
                 jaggedness_delta,
                 valley_delta,
                 max_height_delta,
-                height_std_delta
+                height_std_delta,
+                stack_height=stack_height_pre_clear,
+                board_height=self.grid_height
             )
 
             if self.train_params.get('visual_mode', False):
@@ -2556,6 +2580,7 @@ class Game:
                     if (0, 0, 0) not in row:
                         clearing_lines.append(y)
 
+            stack_height_pre_clear, _, _, _, _ = self.get_grid_stats()
             max_height_after, holes_after, jaggedness_after, valleys_after, height_std_after = self.get_post_clear_grid_stats(clearing_lines)
             hole_delta = holes_after - holes_before_step
             jaggedness_delta = jaggedness_after - jaggedness_before
@@ -2569,7 +2594,9 @@ class Game:
                 jaggedness_delta,
                 valley_delta,
                 max_height_delta,
-                height_std_delta
+                height_std_delta,
+                stack_height=stack_height_pre_clear,
+                board_height=self.grid_height
             )
 
             anchor = self._get_piece_anchor(piece_before)

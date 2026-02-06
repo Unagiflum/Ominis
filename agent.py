@@ -474,7 +474,7 @@ class MonteCarloAgent:
         """Encode (lateral_idx, rotation_idx) to joint action index."""
         return lateral_idx * 3 + rotation_idx
 
-    def calculate_reward(self, lines_cleared, hole_delta, jaggedness_delta, valley_delta, max_height_delta, height_std_delta):
+    def calculate_reward(self, lines_cleared, hole_delta, jaggedness_delta, valley_delta, max_height_delta, height_std_delta, stack_height=None, board_height=None):
         """
         Calculate reward for a piece placement using post-clear board state.
 
@@ -485,6 +485,8 @@ class MonteCarloAgent:
             valley_delta: valleys_after - valleys_before (post-clear vs pre-lock)
             max_height_delta: max_height_after - max_height_before (post-clear vs pre-lock)
             height_std_delta: height_std_after - height_std_before (post-clear vs pre-lock)
+            stack_height: max stack height after the placement, before clearing lines (pre-clear), if available
+            board_height: grid height used to compute the half-height threshold
 
         Returns:
             Total reward for this piece placement (game over penalty applied elsewhere)
@@ -509,7 +511,20 @@ class MonteCarloAgent:
 
         lines_weight = get_float('reward_lines_cleared', 0.075)
         lines_factor = (lines_cleared ** 2) if lines_squared else lines_cleared
-        reward += lines_weight * lines_factor
+        line_reward = lines_weight * lines_factor
+        high_line_mult = get_float('reward_high_line_mult', 1.0)
+        try:
+            stack_height_value = float(stack_height)
+        except (TypeError, ValueError):
+            stack_height_value = None
+        try:
+            board_height_value = float(board_height)
+        except (TypeError, ValueError):
+            board_height_value = None
+        if stack_height_value is not None and board_height_value:
+            if stack_height_value > (board_height_value / 2.0):
+                line_reward *= high_line_mult
+        reward += line_reward
 
         hole_dec = get_float('reward_hole_decrease', 0.490)
         hole_inc = get_float('reward_hole_increase', -0.500)
