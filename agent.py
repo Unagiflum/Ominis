@@ -25,7 +25,7 @@ class MonteCarloAgent:
     EPSILON_HALF_LIFE_STEPS = int((EPSILON_HALF_LIFE_MAX_EXP - EPSILON_HALF_LIFE_MIN_EXP) / EPSILON_HALF_LIFE_STEP_EXP)
     LR_MIN = 1e-6
     LR_MAX = 1e-2
-    CSV_HEADER = "Batch, Lines per Piece, Lines per Game, Epsilon, Learning Rate"
+    CSV_HEADER = "Batch, Lines per Piece, Lines per Game, Epsilon, Learning Rate, Loss"
 
     def __init__(self, train_params):
         self.params = train_params
@@ -78,6 +78,8 @@ class MonteCarloAgent:
         # Benchmarking history
         # Stores tuples of (inference_moves, pieces_locked, lines_cleared, game_overs)
         self.history = deque(maxlen=100)
+        # Batch-loss moving average history (aligned to the same window length)
+        self.loss_history = deque(maxlen=self.history.maxlen)
         
         # Device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -622,7 +624,10 @@ class MonteCarloAgent:
         inference_moves = self.inference_moves_since_train
         pieces = self.pieces_since_train
 
-        self.replay()
+        batch_loss = self.replay()
+        if batch_loss is None:
+            return
+        self.loss_history.append(batch_loss)
         # Per-window stats
         gameovers = self.gameovers_since_train
         
@@ -699,9 +704,11 @@ class MonteCarloAgent:
 
         epsilon_str = f"{self.epsilon:.5f}"
         lr_str = f"{self.learning_rate:.6f}"
+        avg_loss = sum(self.loss_history) / len(self.loss_history) if self.loss_history else 0.0
         print(
             f"Batch {self.training_steps:>7d}, {pieces} pc, {lines:>3d} line, {gameovers:>2d} GO | "
-            f"LPP = {lpp_str} | LPG = {lines_per_game_str} | Epsilon = {epsilon_str} | LR = {lr_str}"
+            f"LPP: {lpp_str} | LPG: {lines_per_game_str} | Epsilon: {epsilon_str} | LR: {lr_str} | "
+            f"Loss: {batch_loss:.2f} ({avg_loss:.2f})"
         )
 
         self.total_samples_since_train = 0
@@ -751,7 +758,7 @@ class MonteCarloAgent:
         No TD bootstrapping or target network involved.
         """
         if len(self.memory) < self.batch_size:
-            return
+            return None
 
         self.model.train()
         batch = random.sample(self.memory, self.batch_size)
@@ -818,6 +825,7 @@ class MonteCarloAgent:
             for param_group in self.optimizer.param_groups:
                 param_group['lr'] = self.learning_rate
         self._sync_learning_rate_params()
+        return float(loss.item())
 
 
 
@@ -837,6 +845,9 @@ class MonteCarloAgent:
         avg_lpg = 0.0
         if total_gameovers > 0:
             avg_lpg = total_lines / total_gameovers
+        avg_loss = 0.0
+        if self.loss_history:
+            avg_loss = sum(self.loss_history) / len(self.loss_history)
             
         import os
         
@@ -849,8 +860,8 @@ class MonteCarloAgent:
                 if write_header:
                     f.write(f"{self.CSV_HEADER}\n")
                 
-                # Format: Batch, Lines_per_Piece, Lines_per_Game, Epsilon, Learning_Rate
-                f.write(f"{self.training_steps}, {avg_lpp:.4f}, {avg_lpg:.3f}, {self.epsilon:.5f}, {self.learning_rate:.6f}\n")
+                # Format: Batch, Lines_per_Piece, Lines_per_Game, Epsilon, Learning_Rate, Loss
+                f.write(f"{self.training_steps}, {avg_lpp:.4f}, {avg_lpg:.3f}, {self.epsilon:.5f}, {self.learning_rate:.6f}, {avg_loss:.6f}\n")
         except PermissionError:
             print(f"Skipping log for batch {self.training_steps}: File is locked.")
         except Exception as e:
@@ -897,7 +908,8 @@ class MonteCarloAgent:
             'epsilon': self.epsilon,
             'params': self.params,
             'training_steps': self.training_steps,
-            'history': list(self.history)
+            'history': list(self.history),
+            'loss_history': list(self.loss_history)
         }, path)
 
     def load(self, path):
@@ -932,6 +944,14 @@ class MonteCarloAgent:
                 self.history = deque(history, maxlen=100)
             except Exception:
                 pass
+        loss_history = checkpoint.get('loss_history')
+        if loss_history:
+            try:
+                self.loss_history = deque(loss_history, maxlen=self.history.maxlen)
+            except Exception:
+                self.loss_history = deque(maxlen=self.history.maxlen)
+        else:
+            self.loss_history = deque(maxlen=self.history.maxlen)
         loaded_epsilon = checkpoint.get('epsilon')
         if loaded_epsilon is None:
             loaded_epsilon = self.epsilon
