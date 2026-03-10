@@ -785,6 +785,9 @@ class Game:
 
             standard_path = self.get_model_filename()
             model_file = selected_path if use_selected else standard_path
+            desired_lr_start = self.train_params.get('learning_rate_start', 0.0025)
+            desired_lr_end = self.train_params.get('learning_rate_end', desired_lr_start)
+            desired_lr_current = self.train_params.get('learning_rate_current', desired_lr_start)
 
             if overwrite_existing or not use_selected:
                 self.train_model_source = os.path.basename(standard_path)
@@ -796,6 +799,13 @@ class Game:
             if model_file and os.path.exists(model_file):
                 try:
                     self.agent.load(model_file)
+                    # Keep UI-selected LR schedule/current even when optimizer state is restored.
+                    self._apply_learning_rate_range(
+                        desired_lr_start,
+                        desired_lr_end,
+                        current=desired_lr_current,
+                        reset_current=False
+                    )
                     loaded_existing = True
                     print(f"Loaded existing model {model_file}.")
                     if use_selected and selected_nonstandard:
