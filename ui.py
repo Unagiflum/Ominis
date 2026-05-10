@@ -460,21 +460,17 @@ class UI:
             self.draw_group_box(padding, current_y, left_pane_width, curriculum_height, "Curriculum")
             
             sy = current_y + 35
-            # Current / Min Rand. (0.0 plus 0.00005 - 0.5 on a log scale)
-            epsilon_min = 0.00005
+            # Current / Min Rand. (0.0005 - 0.5 on a log scale)
+            epsilon_min = 0.0005
             epsilon_max = 0.5
             def clamp_epsilon(val, default=0.0):
                 try:
                     val = float(val)
                 except (TypeError, ValueError):
                     val = default
-                if val <= 0.0:
-                    return 0.0
                 return max(epsilon_min, min(epsilon_max, val))
             def epsilon_to_norm(val):
                 val = clamp_epsilon(val)
-                if val <= 0.0:
-                    return 0.0
                 log_min = math.log10(epsilon_min)
                 log_max = math.log10(epsilon_max)
                 return (math.log10(val) - log_min) / (log_max - log_min)
@@ -494,7 +490,7 @@ class UI:
                 return f"{val:.{decimals}f}"
             def format_epsilon(val):
                 return format_two_sig(val)
-            min_rand_raw = params.get('epsilon_min', 0.0)
+            min_rand_raw = params.get('epsilon_min', epsilon_min)
             current_rand_raw = params.get('epsilon_start', 0.1)
             min_rand = clamp_epsilon(min_rand_raw)
             current_rand = clamp_epsilon(current_rand_raw)
@@ -505,8 +501,8 @@ class UI:
             if not is_training: slider_rects['epsilon_range'] = s_rect
             sy += 45
 
-            # Learning Rate Range (1e-6 - 1e-2, logarithmic)
-            lr_min = 1e-6
+            # Learning Rate Range (0.00005 - 1e-2, logarithmic)
+            lr_min = 0.00005
             lr_max = 1e-2
             def clamp_lr(val, default=0.0025):
                 try:

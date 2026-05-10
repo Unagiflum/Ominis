@@ -17,14 +17,16 @@ class MonteCarloAgent:
     2. Computes a single scalar Monte Carlo return R_piece at the end
     3. Trains Q(s, a) to predict R_piece for all (state, action) pairs in the trajectory
     """
-    EPSILON_MIN_NONZERO = 0.00005
+    EPSILON_MIN_NONZERO = 0.0005
     EPSILON_MAX = 0.5
     EPSILON_HALF_LIFE_MIN_EXP = 2.0
     EPSILON_HALF_LIFE_MAX_EXP = 7.0
     EPSILON_HALF_LIFE_STEP_EXP = 0.5
     EPSILON_HALF_LIFE_STEPS = int((EPSILON_HALF_LIFE_MAX_EXP - EPSILON_HALF_LIFE_MIN_EXP) / EPSILON_HALF_LIFE_STEP_EXP)
-    LR_MIN = 1e-6
+    LR_MIN = 0.00005
     LR_MAX = 1e-2
+    FLOOR_RESTART_BATCHES = 2500
+    FLOOR_RESTART_MULTIPLIER = 10.0
     CSV_HEADER = "Batch, Lines per Piece, Lines per Game, Epsilon, Learning Rate, Loss"
 
     def __init__(self, train_params):
@@ -41,10 +43,10 @@ class MonteCarloAgent:
                 epsilon_min_raw = float(self.params.get('epsilon_min_percent')) / 100.0
             except (TypeError, ValueError):
                 epsilon_min_raw = None
-        epsilon_min = self._clamp_epsilon(epsilon_min_raw, default=0.0)
+        epsilon_min = self._clamp_epsilon(epsilon_min_raw, default=self.EPSILON_MIN_NONZERO)
         self.params['epsilon_min'] = epsilon_min
         self.params.pop('epsilon_min_percent', None)
-        self.epsilon_min = epsilon_min # Minimum exploration rate (Default 0.0)
+        self.epsilon_min = epsilon_min # Minimum exploration rate
         epsilon_start_raw = self.params.get('epsilon_start')
         if epsilon_start_raw is None and 'epsilon_current_percent' in self.params:
             try:
@@ -67,6 +69,7 @@ class MonteCarloAgent:
         self.learning_rate = lr_current
         self.learning_rate_decay = self._compute_epsilon_decay(half_life)
         self._sync_learning_rate_params()
+        self.floor_restart_batches_at_floor = 0
         self.memory = deque(maxlen=10000) # Single replay memory for all trajectories
         self.total_samples_since_train = 0
         self.train_trigger_interval = 5000  # Train more frequently with smaller batches
@@ -229,13 +232,13 @@ class MonteCarloAgent:
                 return value
         return None
 
-    def _clamp_epsilon(self, value, default=0.0):
+    def _clamp_epsilon(self, value, default=None):
+        if default is None:
+            default = self.EPSILON_MIN_NONZERO
         try:
             value = float(value)
         except (TypeError, ValueError):
             value = default
-        if value <= 0.0:
-            return 0.0
         return max(self.EPSILON_MIN_NONZERO, min(self.EPSILON_MAX, value))
 
     def _snap_epsilon_half_life(self, value):
@@ -283,9 +286,40 @@ class MonteCarloAgent:
         if 'learning_rate' in self.params:
             self.params['learning_rate'] = round(self.learning_rate, 8)
 
+    def _sync_optimizer_learning_rate(self):
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = self.learning_rate
+
     def _compute_epsilon_decay(self, half_life_batches):
         half_life_batches = max(1.0, float(half_life_batches))
         return 10 ** (math.log10(0.5) / half_life_batches)
+
+    def _learning_rate_floor_tolerance(self):
+        return max(1e-12, self.learning_rate_end * 0.005)
+
+    def _epsilon_restart_floor(self):
+        return self.epsilon_min
+
+    def _both_decay_values_at_floor(self):
+        epsilon_at_floor = self.epsilon <= self._epsilon_restart_floor()
+        lr_at_floor = self.learning_rate <= self.learning_rate_end + self._learning_rate_floor_tolerance()
+        return epsilon_at_floor and lr_at_floor
+
+    def _apply_floor_restart_if_due(self):
+        if self._both_decay_values_at_floor():
+            self.floor_restart_batches_at_floor += 1
+        else:
+            self.floor_restart_batches_at_floor = 0
+            return
+
+        if self.floor_restart_batches_at_floor < self.FLOOR_RESTART_BATCHES:
+            return
+
+        self.epsilon = min(self._epsilon_restart_floor() * self.FLOOR_RESTART_MULTIPLIER, self.EPSILON_MAX)
+        self.learning_rate = min(self.learning_rate_end * self.FLOOR_RESTART_MULTIPLIER, self.LR_MAX)
+        self._sync_optimizer_learning_rate()
+        self._sync_learning_rate_params()
+        self.floor_restart_batches_at_floor = 0
 
     def get_state(self, game):
         buffer_rows = 10
@@ -407,7 +441,7 @@ class MonteCarloAgent:
         mask[stay_action] = True
         return mask
 
-    def select_action(self, state, action_mask=None, return_q_value=False):
+    def select_action(self, state, action_mask=None, return_q_value=False, force_greedy=False):
         """Select action using epsilon-greedy with joint action space.
         
         Returns:
@@ -425,7 +459,7 @@ class MonteCarloAgent:
                 valid_action_indices = np.array([self.encode_action(1, 1)], dtype=np.int64)
         
         self.model.eval()
-        explore = (random.random() <= self.epsilon)
+        explore = False if force_greedy else (random.random() <= self.epsilon)
 
         q_values = None
         if return_q_value or not explore:
@@ -816,14 +850,12 @@ class MonteCarloAgent:
         # Decay learning rate toward the configured end value
         if self.learning_rate != self.learning_rate_end:
             self.learning_rate = self.learning_rate_end + (self.learning_rate - self.learning_rate_end) * self.learning_rate_decay
-            floor_lr = min(self.learning_rate_start, self.learning_rate_end)
-            ceil_lr = max(self.learning_rate_start, self.learning_rate_end)
-            if self.learning_rate < floor_lr:
-                self.learning_rate = floor_lr
-            elif self.learning_rate > ceil_lr:
-                self.learning_rate = ceil_lr
-            for param_group in self.optimizer.param_groups:
-                param_group['lr'] = self.learning_rate
+            if self.learning_rate <= self.learning_rate_end + self._learning_rate_floor_tolerance():
+                self.learning_rate = self.learning_rate_end
+            elif self.learning_rate > self.LR_MAX:
+                self.learning_rate = self.LR_MAX
+            self._sync_optimizer_learning_rate()
+        self._apply_floor_restart_if_due()
         self._sync_learning_rate_params()
         return float(loss.item())
 
@@ -871,7 +903,7 @@ class MonteCarloAgent:
         """Update hyperparameters from self.params (which are shared with UI)."""
         self.gamma = 1.0
         self.params['gamma'] = 1.0
-        epsilon_min = self._clamp_epsilon(self.params.get('epsilon_min', 0.0))
+        epsilon_min = self._clamp_epsilon(self.params.get('epsilon_min', self.EPSILON_MIN_NONZERO))
         self.params['epsilon_min'] = epsilon_min
         self.params.pop('epsilon_min_percent', None)
         self.params.pop('epsilon_current_percent', None)
@@ -885,12 +917,12 @@ class MonteCarloAgent:
         self.learning_rate = lr_current
         self.learning_rate_decay = self._compute_epsilon_decay(half_life)
         self._sync_learning_rate_params()
+        self.floor_restart_batches_at_floor = 0
         # If the floor increases, ensure current epsilon respects it
         self.epsilon = max(self.epsilon, self.epsilon_min)
         
         # Update optimizer learning rate
-        for param_group in self.optimizer.param_groups:
-            param_group['lr'] = self.learning_rate
+        self._sync_optimizer_learning_rate()
 
     def save(self, path):
         """
@@ -908,6 +940,7 @@ class MonteCarloAgent:
             'epsilon': self.epsilon,
             'params': self.params,
             'training_steps': self.training_steps,
+            'floor_restart_batches_at_floor': self.floor_restart_batches_at_floor,
             'history': list(self.history),
             'loss_history': list(self.loss_history)
         }, path)
@@ -960,6 +993,11 @@ class MonteCarloAgent:
         except (TypeError, ValueError):
             loaded_epsilon = self.epsilon
         self.epsilon = max(loaded_epsilon, self.epsilon_min)
+        loaded_floor_batches = checkpoint.get('floor_restart_batches_at_floor', 0)
+        try:
+            self.floor_restart_batches_at_floor = max(0, int(loaded_floor_batches))
+        except (TypeError, ValueError):
+            self.floor_restart_batches_at_floor = 0
         loaded_steps = None
         if isinstance(checkpoint, dict):
             loaded_steps = checkpoint.get('training_steps')
